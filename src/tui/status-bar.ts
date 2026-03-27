@@ -2,7 +2,6 @@ import { CURSOR_MARKER, type Component, type Focusable, visibleWidth } from "@ma
 import { cyan, dim, dimGray, green, yellow } from "./colors.js";
 import { formatDuration } from "./event-log.js";
 
-
 interface StatusInfo {
   step?: number;
   totalSteps?: number;

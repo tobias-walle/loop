@@ -89,9 +89,17 @@ async function main(): Promise<void> {
   }
 
   if (!isRunningInContainer()) {
+    const { boldRed, dim } = await import("./tui/colors.js");
     console.error(
-      "Error: loop runs with --dangerously-skip-permissions and must only be used inside a container.\n" +
-        "Run inside Docker, devcontainers, or a similar sandboxed environment.",
+      boldRed("\n  ⚠️  SECURITY WARNING\n") +
+        "\n" +
+        "  loop runs with --dangerously-skip-permissions, which gives the\n" +
+        "  agent unrestricted access to your system.\n\n" +
+        "  This tool must only be used inside a container:\n" +
+        dim("    - Docker / Podman\n") +
+        dim("    - Devcontainers\n") +
+        dim("    - GitHub Codespaces\n") +
+        dim("    - Kubernetes pods\n"),
     );
     process.exit(1);
   }
