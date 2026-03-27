@@ -1,0 +1,30 @@
+{
+  "name": "@loop/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "loop": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": ["dist", "src/templates"],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node",
+    "test": "bun test",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "knip": "knip",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mariozechner/pi-tui": "latest"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/bun": "latest",
+    "@types/node": "^22.0.0",
+    "knip": "^5.0.0",
+    "typescript": "^5.7.0"
+  }
+}
