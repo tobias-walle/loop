@@ -179,8 +179,9 @@ export function createEventRouter(
     max?: number,
   ): void {
     const header = formatStepHeader(step, totalSteps, task, iteration, max);
-    // Blank line before headers (except first)
+    // Visual gap before headers (except first output)
     if (root.children.length > 0) {
+      root.addChild(new Text("", 0, 0));
       root.addChild(new Text("", 0, 0));
     }
     root.addChild(new Text(header, 0, 0));

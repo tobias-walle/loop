@@ -210,14 +210,14 @@ describe("createEventRouter", () => {
     expect(rendered).toContain("Create an about page");
   });
 
-  test("showStepHeader adds blank line before second header", () => {
+  test("showStepHeader adds gap before second header", () => {
     const { root, router } = setup();
 
     router.showStepHeader(1, 3, "First");
     router.showStepHeader(2, 3, "Second");
 
-    // First header (1) + blank (1) + second header (1) = 3
-    expect(root.children).toHaveLength(3);
+    // First header (1) + 2 blank lines + second header (1) = 4
+    expect(root.children).toHaveLength(4);
   });
 
   test("showStepHeader with iteration info", () => {
