@@ -266,6 +266,7 @@ export function createClaudeAdapter(): AgentAdapter {
         [
           "--print",
           "--verbose",
+          "--dangerously-skip-permissions",
           "--input-format",
           "stream-json",
           "--output-format",

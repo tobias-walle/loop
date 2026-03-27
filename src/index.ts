@@ -35,6 +35,25 @@ export type {
 export { createLoopTUI } from "./tui/app.js";
 export type { LoopTUI, LoopTUIOptions } from "./tui/app.js";
 
+function isRunningInContainer(): boolean {
+  try {
+    // Docker / Podman: /.dockerenv exists
+    if (fs.existsSync("/.dockerenv")) return true;
+    // cgroups: look for docker/container references
+    const cgroup = fs.readFileSync("/proc/1/cgroup", "utf-8");
+    if (cgroup.includes("docker") || cgroup.includes("containerd") || cgroup.includes("lxc")) {
+      return true;
+    }
+    // Kubernetes / generic container runtime
+    if (process.env.KUBERNETES_SERVICE_HOST) return true;
+    // Devcontainer
+    if (process.env.REMOTE_CONTAINERS === "true" || process.env.CODESPACES === "true") return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function runInit(): void {
   const dest = path.join(process.cwd(), "LOOP.md");
 
@@ -66,6 +85,14 @@ async function main(): Promise<void> {
 
   if (config.steps.length === 0) {
     console.error('Error: No tasks provided. Usage: loop "task"');
+    process.exit(1);
+  }
+
+  if (!isRunningInContainer()) {
+    console.error(
+      "Error: loop runs with --dangerously-skip-permissions and must only be used inside a container.\n" +
+        "Run inside Docker, devcontainers, or a similar sandboxed environment.",
+    );
     process.exit(1);
   }
 
