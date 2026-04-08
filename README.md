@@ -4,17 +4,11 @@ A CLI tool that runs coding agents in loops and sequences with a minimal TUI for
 
 ## Installation
 
-Requires [Bun](https://bun.sh) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be installed.
+Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be installed.
 
 ```bash
-git clone <repo-url>
-cd loop
-bun install
-bun run build
-bun link
+npm install -g loop
 ```
-
-After `bun link`, the `loop` command is available globally.
 
 ## Usage
 
