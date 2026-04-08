@@ -42,9 +42,10 @@ export function formatToolLine(
       const pathSuffix = p ? ` in ${p}` : "";
       return `${yellow("⚙")} ${boldYellow(tool)} ${dim(truncate(`"${query}"${pathSuffix}`, maxWidth - tool.length - 5))}`;
     }
-    case "Task": {
+    case "Task":
+    case "Agent": {
       const task = (input.task ?? input.description ?? "") as string;
-      return `${boldMagenta("⚙ Subagent")} ${dim(truncate(`"${task}"`, maxWidth - 14))}`;
+      return `${boldMagenta("⚙ Agent:")} ${dim(truncate(task, maxWidth - 12))}`;
     }
     default: {
       const firstString = Object.values(input).find((v) => typeof v === "string") as

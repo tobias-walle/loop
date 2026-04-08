@@ -9,7 +9,10 @@ export type ToolCall = {
   tool: string;
   input: Record<string, unknown>;
   result: string;
+  /** Nested turns emitted between task_started and task_done for Agent/Task tools. */
   subagent?: Turn[];
+  /** Duration reported by the task (ms). Defaults to 0. */
+  subagentDurationMs?: number;
 };
 
 export type Scenario = {
@@ -56,9 +59,34 @@ function collectTurnEvents(turns: Turn[], parentToolUseId: string | null): Agent
           parentToolUseId,
         });
 
-        // If this is a subagent call, emit nested turn events
+        // Emit task lifecycle events for Agent/Task tool calls with subagent turns
         if (call.subagent) {
+          const taskId = `task_stub_${toolIdCounter}`;
+          const description =
+            typeof call.input.description === "string"
+              ? call.input.description
+              : typeof call.input.task === "string"
+                ? call.input.task
+                : call.tool;
+
+          events.push({
+            type: "task_started",
+            taskId,
+            toolUseId: toolId,
+            description,
+            prompt: typeof call.input.prompt === "string" ? call.input.prompt : description,
+          });
+
           events.push(...collectTurnEvents(call.subagent, toolId));
+
+          events.push({
+            type: "task_done",
+            taskId,
+            toolUseId: toolId,
+            status: "completed",
+            summary: description,
+            durationMs: call.subagentDurationMs ?? 0,
+          });
         }
 
         events.push({

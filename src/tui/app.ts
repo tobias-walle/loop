@@ -1,4 +1,11 @@
-import { Box, Container, ProcessTerminal, TUI, Text, matchesKey } from "@mariozechner/pi-tui";
+import {
+  type Component,
+  Container,
+  ProcessTerminal,
+  TUI,
+  Text,
+  matchesKey,
+} from "@mariozechner/pi-tui";
 import type { AgentEvent } from "../agents/types.js";
 import type { RunSummary, TokenUsage } from "../lib/types.js";
 import { dim } from "./colors.js";
@@ -11,6 +18,7 @@ import {
   formatToolLine,
   formatUserMessage,
 } from "./event-log.js";
+import { PipeBox } from "./pipe-box.js";
 import { StatusBar } from "./status-bar.js";
 
 export interface LoopTUIOptions {
@@ -48,13 +56,16 @@ export interface LoopTUI {
   }): void;
 }
 
+/** Any component that can hold children (Container, PipeBox, etc.) */
+type ChildContainer = Component & { children: Component[]; addChild(c: Component): void };
+
 /**
  * Internal state used for event routing.
  * Exported for testing.
  */
 export interface LoopTUIState {
-  containerStack: Container[];
-  toolIdToContainer: Map<string, Container>;
+  containerStack: ChildContainer[];
+  toolIdToContainer: Map<string, ChildContainer>;
   textBlocks: Map<string, { textRef: Text; accumulated: string }>;
 }
 
@@ -91,11 +102,11 @@ export function createEventRouter(
     textBlocks: new Map(),
   };
 
-  function currentContainer(): Container {
+  function currentContainer(): ChildContainer {
     return state.containerStack[state.containerStack.length - 1];
   }
 
-  function containerForEvent(parentToolUseId: string | null): Container {
+  function containerForEvent(parentToolUseId: string | null): ChildContainer {
     if (parentToolUseId !== null) {
       const mapped = state.toolIdToContainer.get(parentToolUseId);
       if (mapped) return mapped;
@@ -129,32 +140,21 @@ export function createEventRouter(
       }
 
       case "tool_start": {
+        // Agent/Task tools are visualized by the task_started/task_done lifecycle events instead.
+        if (event.tool === "Task" || event.tool === "Agent") {
+          break;
+        }
+
         const container = containerForEvent(event.parentToolUseId);
         const line = formatToolLine(event.tool, event.input);
         container.addChild(new Text(line, 0, 0));
-
-        if (event.tool === "Task") {
-          const subBox = new Box(3, 0);
-          container.addChild(subBox);
-          state.containerStack.push(subBox);
-          state.toolIdToContainer.set(event.toolId, subBox);
-        }
-
         requestRender();
         break;
       }
 
       case "tool_done": {
-        const mapped = state.toolIdToContainer.get(event.toolId);
-        if (mapped) {
-          mapped.addChild(new Text(dim("└ Done"), 0, 0));
-          const idx = state.containerStack.indexOf(mapped);
-          if (idx !== -1) {
-            state.containerStack.splice(idx, 1);
-          }
-          state.toolIdToContainer.delete(event.toolId);
-          requestRender();
-        }
+        // Cleanup container mapping (task_done handles visual closure for Agent/Task tools)
+        state.toolIdToContainer.delete(event.toolId);
         break;
       }
 
@@ -174,6 +174,39 @@ export function createEventRouter(
         break;
       }
 
+      case "task_started": {
+        const container = currentContainer();
+        container.addChild(new Text(dim(`┌ Agent: ${event.description}`), 0, 0));
+        const subBox = new PipeBox();
+        container.addChild(subBox);
+        state.containerStack.push(subBox);
+        state.toolIdToContainer.set(event.toolUseId, subBox);
+        requestRender();
+        break;
+      }
+
+      case "task_done": {
+        const mapped = state.toolIdToContainer.get(event.toolUseId);
+        const parent = (() => {
+          if (!mapped) return currentContainer();
+          const idx = state.containerStack.indexOf(mapped);
+          return idx > 0 ? state.containerStack[idx - 1] : currentContainer();
+        })();
+        if (mapped) {
+          const idx = state.containerStack.indexOf(mapped);
+          if (idx !== -1) {
+            state.containerStack.splice(idx, 1);
+          }
+          state.toolIdToContainer.delete(event.toolUseId);
+        }
+        const durationSec = (event.durationMs / 1000).toFixed(1);
+        parent.addChild(
+          new Text(dim(`└ ${event.status}: ${event.summary} (${durationSec}s)`), 0, 0),
+        );
+        requestRender();
+        break;
+      }
+
       default:
         break;
     }
@@ -187,10 +220,11 @@ export function createEventRouter(
     max?: number,
   ): void {
     const header = formatStepHeader(step, totalSteps, task, iteration, max);
+    // Reset container stack so nested containers from previous steps don't leak
+    state.containerStack.length = 1;
+    state.toolIdToContainer.clear();
+    state.textBlocks.clear();
     // Visual gap before headers
-    if (root.children.length > 0) {
-      root.addChild(new Text("", 0, 0));
-    }
     root.addChild(new Text("", 0, 0));
     root.addChild(new Text(header, 0, 0));
     requestRender();

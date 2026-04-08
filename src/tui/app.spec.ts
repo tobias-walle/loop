@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { Box, Container } from "@mariozechner/pi-tui";
+import { Container } from "@mariozechner/pi-tui";
 import { createEventRouter } from "./app.js";
+import { PipeBox } from "./pipe-box.js";
 
 function setup() {
   const root = new Container();
@@ -72,40 +73,61 @@ describe("createEventRouter", () => {
     expect(rendered).toContain("src/index.ts");
   });
 
-  test("tool_start for Task creates a nested container", () => {
+  test("task_started creates a nested container", () => {
+    const { root, router } = setup();
+
+    router.handleEvent(
+      {
+        type: "task_started",
+        taskId: "task_1",
+        toolUseId: "t1",
+        description: "Review code",
+        prompt: "Review",
+      },
+      0,
+    );
+
+    // Header text + Box
+    expect(root.children).toHaveLength(2);
+    expect(root.children[1]).toBeInstanceOf(PipeBox);
+    expect(router.state.containerStack).toHaveLength(2);
+  });
+
+  test("tool_start for Agent/Task is suppressed (task_started handles visuals)", () => {
     const { root, router } = setup();
 
     router.handleEvent(
       {
         type: "tool_start",
         toolId: "t1",
-        tool: "Task",
-        input: { task: "Review code" },
+        tool: "Agent",
+        input: { description: "Review code" },
         parentToolUseId: null,
       },
       0,
     );
 
-    expect(root.children).toHaveLength(2);
-    expect(root.children[1]).toBeInstanceOf(Box);
-    expect(router.state.containerStack).toHaveLength(2);
+    // Agent tool_start should produce no output
+    expect(root.children).toHaveLength(0);
   });
 
   test("events with parentToolUseId route to subagent container", () => {
     const { root, router } = setup();
 
+    // task_started creates the indented container
     router.handleEvent(
       {
-        type: "tool_start",
-        toolId: "t1",
-        tool: "Task",
-        input: { task: "Review code" },
-        parentToolUseId: null,
+        type: "task_started",
+        taskId: "task_1",
+        toolUseId: "t1",
+        description: "Review code",
+        prompt: "Review",
       },
       0,
     );
 
-    const subBox = root.children[1] as Box;
+    // Header text + Box = 2 children
+    const subBox = root.children[1] as PipeBox;
 
     router.handleEvent({ type: "text_delta", text: "Reviewing...", parentToolUseId: "t1" }, 0);
     expect(subBox.children).toHaveLength(1);
@@ -125,31 +147,40 @@ describe("createEventRouter", () => {
     expect(subBox.children).toHaveLength(2);
   });
 
-  test("tool_done for subagent pops container", () => {
+  test("task_done pops container and shows summary", () => {
     const { root, router } = setup();
 
     router.handleEvent(
       {
-        type: "tool_start",
-        toolId: "t1",
-        tool: "Task",
-        input: { task: "Review" },
-        parentToolUseId: null,
+        type: "task_started",
+        taskId: "task_1",
+        toolUseId: "t1",
+        description: "Review",
+        prompt: "Review code",
       },
       0,
     );
     expect(router.state.containerStack).toHaveLength(2);
 
     router.handleEvent(
-      { type: "tool_done", toolId: "t1", result: "Done", parentToolUseId: null },
+      {
+        type: "task_done",
+        taskId: "task_1",
+        toolUseId: "t1",
+        status: "completed",
+        summary: "Review finished",
+        durationMs: 3000,
+      },
       0,
     );
     expect(router.state.containerStack).toHaveLength(1);
 
-    const subBox = root.children[1] as Box;
-    const lastChild = subBox.children[subBox.children.length - 1];
+    // The └ line should be on the root (parent), not inside the box
+    const lastChild = root.children[root.children.length - 1];
     const rendered = lastChild.render(200).join("\n");
-    expect(rendered).toContain("Done");
+    expect(rendered).toContain("completed");
+    expect(rendered).toContain("Review finished");
+    expect(rendered).toContain("3.0s");
   });
 
   test("tool_done for non-subagent does nothing", () => {
@@ -217,8 +248,8 @@ describe("createEventRouter", () => {
     router.showStepHeader(1, 3, "First");
     router.showStepHeader(2, 3, "Second");
 
-    // First: blank + header (2) + Second: blank + header (2) = 4 + gap blank = 5
-    expect(root.children).toHaveLength(5);
+    // First: blank + header (2) + Second: blank + header (2) = 4
+    expect(root.children).toHaveLength(4);
   });
 
   test("showStepHeader with iteration info", () => {
@@ -299,40 +330,59 @@ describe("createEventRouter", () => {
     expect(getRenderCount()).toBe(2);
   });
 
-  test("nested subagents work correctly", () => {
+  test("nested subagents work correctly with task lifecycle events", () => {
     const { router } = setup();
 
+    // task_started pushes an indented container
     router.handleEvent(
       {
-        type: "tool_start",
-        toolId: "outer",
-        tool: "Task",
-        input: { task: "Outer" },
-        parentToolUseId: null,
+        type: "task_started",
+        taskId: "task_outer",
+        toolUseId: "outer",
+        description: "Outer task",
+        prompt: "Do outer work",
       },
       0,
     );
+    expect(router.state.containerStack).toHaveLength(2);
 
+    // Nested agent inside the task
     router.handleEvent(
       {
-        type: "tool_start",
-        toolId: "inner",
-        tool: "Task",
-        input: { task: "Inner" },
-        parentToolUseId: "outer",
+        type: "task_started",
+        taskId: "task_inner",
+        toolUseId: "inner",
+        description: "Inner task",
+        prompt: "Do inner work",
       },
       0,
     );
     expect(router.state.containerStack).toHaveLength(3);
 
+    // Inner task completes
     router.handleEvent(
-      { type: "tool_done", toolId: "inner", result: "ok", parentToolUseId: "outer" },
+      {
+        type: "task_done",
+        taskId: "task_inner",
+        toolUseId: "inner",
+        status: "completed",
+        summary: "Inner done",
+        durationMs: 1000,
+      },
       0,
     );
     expect(router.state.containerStack).toHaveLength(2);
 
+    // Outer task completes
     router.handleEvent(
-      { type: "tool_done", toolId: "outer", result: "ok", parentToolUseId: null },
+      {
+        type: "task_done",
+        taskId: "task_outer",
+        toolUseId: "outer",
+        status: "completed",
+        summary: "Outer done",
+        durationMs: 5000,
+      },
       0,
     );
     expect(router.state.containerStack).toHaveLength(1);

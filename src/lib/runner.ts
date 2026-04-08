@@ -160,10 +160,9 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
       state.step = stepIndex;
       state.iteration = iteration;
 
-      logToFile(
-        projectRoot,
-        `Step ${stepIndex + 1}/${steps.length} - iteration ${iteration} - start`,
-      );
+      const stepLabel = `Step ${stepIndex + 1}/${steps.length} - iteration ${iteration}`;
+
+      logToFile(projectRoot, `${stepLabel} - start`);
 
       opts.onStepStart?.(stepIndex, step, iteration);
 
@@ -180,6 +179,8 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
       const session = opts.agent.spawn(prompt, { cwd: projectRoot });
       currentSession = session;
 
+      logToFile(projectRoot, `${stepLabel} - agent spawned`);
+
       // Deliver any messages queued before the session started
       for (const msg of pendingMessages) {
         session.sendMessage(msg);
@@ -191,8 +192,10 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
       let duration = 0;
       let usage = emptyUsage();
       let hadError = false;
+      let eventCount = 0;
 
       for await (const event of session.events) {
+        eventCount++;
         if (aborted) break;
 
         opts.onEvent?.(event, stepIndex);
@@ -207,11 +210,27 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
             cacheCreationTokens: event.usage.cacheCreationTokens ?? 0,
             cacheReadTokens: event.usage.cacheReadTokens ?? 0,
           };
+          logToFile(
+            projectRoot,
+            `${stepLabel} - done (cost=$${cost.toFixed(4)}, ${eventCount} events)`,
+          );
         } else if (event.type === "error") {
           hadError = true;
           errorMsg = event.message;
           result = "";
+          logToFile(projectRoot, `${stepLabel} - agent error: ${event.message}`);
+        } else if (event.type === "unknown") {
+          logToFile(
+            projectRoot,
+            `${stepLabel} - unknown event "${event.eventType}": ${JSON.stringify(event.raw)}`,
+          );
+        } else if (event.type === "session_start") {
+          logToFile(projectRoot, `${stepLabel} - session started (model=${event.model})`);
         }
+      }
+
+      if (eventCount === 0) {
+        logToFile(projectRoot, `${stepLabel} - WARNING: agent produced no events`);
       }
 
       currentSession = null;

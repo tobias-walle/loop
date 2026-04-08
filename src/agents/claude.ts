@@ -20,6 +20,29 @@ type ClaudeEvent =
       error: string;
     }
   | {
+      type: "system";
+      subtype: "task_started";
+      task_id: string;
+      tool_use_id: string;
+      description: string;
+      prompt: string;
+    }
+  | {
+      type: "system";
+      subtype: "task_notification";
+      task_id: string;
+      tool_use_id: string;
+      status: string;
+      summary: string;
+      usage: { duration_ms: number };
+    }
+  | {
+      type: "system";
+      subtype: "task_progress";
+      task_id: string;
+      tool_use_id: string;
+    }
+  | {
       type: "stream_event";
       event: StreamEvent;
       parent_tool_use_id: string | null;
@@ -58,6 +81,7 @@ type ClaudeEvent =
     }
   | {
       type: "assistant";
+      parent_tool_use_id: string | null;
       message: {
         content: Array<
           | { type: "text"; text: string }
@@ -100,39 +124,70 @@ export function parseClaudeLine(
   parentToolUseIdByIndex: Map<number, string | null>,
   toolIdToParent: Map<string, string | null>,
 ): AgentEvent[] {
-  let parsed: ClaudeEvent;
+  let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(line);
   } catch {
     return [];
   }
 
-  const events: AgentEvent[] = [];
+  if (typeof parsed !== "object" || parsed === null || typeof parsed.type !== "string") {
+    return [];
+  }
 
-  switch (parsed.type) {
+  const events: AgentEvent[] = [];
+  const typed = parsed as unknown as ClaudeEvent;
+
+  switch (typed.type) {
     case "system": {
-      if (parsed.subtype === "init") {
+      if (typed.subtype === "init") {
         events.push({
           type: "session_start",
-          model: parsed.model,
-          sessionId: parsed.session_id,
-          tools: parsed.tools,
+          model: typed.model,
+          sessionId: typed.session_id,
+          tools: typed.tools,
         });
-      } else if (parsed.subtype === "api_retry") {
+      } else if (typed.subtype === "api_retry") {
         events.push({
           type: "retry",
-          attempt: parsed.attempt,
-          maxRetries: parsed.max_retries,
-          delayMs: parsed.retry_delay_ms,
-          error: parsed.error,
+          attempt: typed.attempt,
+          maxRetries: typed.max_retries,
+          delayMs: typed.retry_delay_ms,
+          error: typed.error,
+        });
+      } else if (typed.subtype === "task_started") {
+        events.push({
+          type: "task_started",
+          taskId: typed.task_id,
+          toolUseId: typed.tool_use_id,
+          description: typed.description,
+          prompt: typed.prompt,
+        });
+      } else if (typed.subtype === "task_notification") {
+        events.push({
+          type: "task_done",
+          taskId: typed.task_id,
+          toolUseId: typed.tool_use_id,
+          status: typed.status,
+          summary: typed.summary,
+          durationMs: typed.usage.duration_ms,
+        });
+      } else if (typed.subtype === "task_progress") {
+        // Subagent progress updates — tool calls are already extracted
+        // from "assistant" events, so no additional events needed.
+      } else {
+        events.push({
+          type: "unknown",
+          eventType: `system/${String(parsed.subtype)}`,
+          raw: parsed,
         });
       }
       break;
     }
 
     case "stream_event": {
-      const parentToolUseId = parsed.parent_tool_use_id ?? null;
-      const evt = parsed.event;
+      const parentToolUseId = typed.parent_tool_use_id ?? null;
+      const evt = typed.event;
 
       switch (evt.type) {
         case "content_block_start": {
@@ -201,15 +256,25 @@ export function parseClaudeLine(
           break;
         }
 
-        // message_start, message_delta, message_stop: no events emitted
+        // message_start, message_delta, message_stop: structural stream framing, no events needed
+        case "message_start":
+        case "message_delta":
+        case "message_stop":
+          break;
+
         default:
+          events.push({
+            type: "unknown",
+            eventType: `stream_event/${String((evt as { type: string }).type)}`,
+            raw: parsed,
+          });
           break;
       }
       break;
     }
 
     case "user": {
-      const content = parsed.message?.content;
+      const content = typed.message?.content;
       if (Array.isArray(content)) {
         for (const item of content) {
           if (item.type === "tool_result") {
@@ -230,60 +295,59 @@ export function parseClaudeLine(
     case "rate_limit_event": {
       events.push({
         type: "rate_limit",
-        status: parsed.rate_limit_info.status,
-        resetsAt: parsed.rate_limit_info.resetsAt,
+        status: typed.rate_limit_info.status,
+        resetsAt: typed.rate_limit_info.resetsAt,
       });
       break;
     }
 
     case "result": {
-      if (parsed.is_error) {
+      if (typed.is_error) {
         events.push({
           type: "error",
-          message: parsed.result,
+          message: typed.result,
         });
       } else {
         events.push({
           type: "done",
-          result: parsed.result,
-          costUsd: parsed.total_cost_usd,
-          durationMs: parsed.duration_ms,
+          result: typed.result,
+          costUsd: typed.total_cost_usd,
+          durationMs: typed.duration_ms,
           usage: {
-            inputTokens: parsed.usage.input_tokens,
-            outputTokens: parsed.usage.output_tokens,
-            cacheCreationTokens: parsed.usage.cache_creation_input_tokens,
-            cacheReadTokens: parsed.usage.cache_read_input_tokens,
+            inputTokens: typed.usage.input_tokens,
+            outputTokens: typed.usage.output_tokens,
+            cacheCreationTokens: typed.usage.cache_creation_input_tokens,
+            cacheReadTokens: typed.usage.cache_read_input_tokens,
           },
         });
       }
       break;
     }
 
+    // "assistant" events from the main agent duplicate content already streamed
+    // via "stream_event". But subagent messages (parent_tool_use_id set) only
+    // arrive as "assistant" events — extract tool calls and text from those.
     case "assistant": {
-      const content = parsed.message?.content;
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block.type === "text") {
-            events.push({
-              type: "text_done",
-              text: block.text,
-              parentToolUseId: null,
-            });
-          } else if (block.type === "tool_use") {
-            events.push({
-              type: "tool_start",
-              toolId: block.id,
-              tool: block.name,
-              input: block.input,
-              parentToolUseId: null,
-            });
-          }
+      const parentId = typed.parent_tool_use_id ?? null;
+      if (parentId === null) break;
+
+      for (const block of typed.message.content) {
+        if (block.type === "tool_use") {
+          toolIdToParent.set(block.id, parentId);
+          events.push({
+            type: "tool_start",
+            toolId: block.id,
+            tool: block.name,
+            input: block.input,
+            parentToolUseId: parentId,
+          });
         }
       }
       break;
     }
 
     default:
+      events.push({ type: "unknown", eventType: parsed.type as string, raw: parsed });
       break;
   }
 

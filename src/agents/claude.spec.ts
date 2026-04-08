@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { PassThrough } from "node:stream";
 import { parseClaudeLine, readLines, streamEvents } from "./claude.js";
 import type { AgentEvent } from "./types.js";
@@ -478,38 +480,91 @@ describe("parseClaudeLine", () => {
     ]);
   });
 
-  it("parses assistant events with text content", () => {
+  it("skips assistant events without parent_tool_use_id (duplicates streaming content)", () => {
     const events = parse({
       type: "assistant",
+      parent_tool_use_id: null,
       message: {
         role: "assistant",
         content: [{ type: "text", text: "hello" }],
       },
     });
-    expect(events).toEqual([
-      {
-        type: "text_done",
-        text: "hello",
-        parentToolUseId: null,
-      },
-    ]);
+    expect(events).toEqual([]);
   });
 
-  it("parses assistant events with tool_use content", () => {
-    const events = parse({
-      type: "assistant",
-      message: {
-        role: "assistant",
-        content: [{ type: "tool_use", id: "tool_1", name: "Bash", input: { command: "ls" } }],
+  it("extracts tool calls from subagent assistant events", () => {
+    const state = createState();
+    const events = parseLine(
+      {
+        type: "assistant",
+        parent_tool_use_id: "toolu_parent_123",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_child_1",
+              name: "Bash",
+              input: { command: "find . -type f | head -5" },
+            },
+          ],
+        },
       },
-    });
+      state,
+    );
+
     expect(events).toEqual([
       {
         type: "tool_start",
-        toolId: "tool_1",
+        toolId: "toolu_child_1",
         tool: "Bash",
-        input: { command: "ls" },
-        parentToolUseId: null,
+        input: { command: "find . -type f | head -5" },
+        parentToolUseId: "toolu_parent_123",
+      },
+    ]);
+
+    // Verify parent mapping is stored for tool_done resolution
+    expect(state.toolIdToParent.get("toolu_child_1")).toBe("toolu_parent_123");
+  });
+
+  it("extracts multiple tool calls from a single subagent assistant event", () => {
+    const events = parse({
+      type: "assistant",
+      parent_tool_use_id: "toolu_parent_456",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: "Let me read both files" },
+          {
+            type: "tool_use",
+            id: "toolu_a",
+            name: "Read",
+            input: { file_path: "src/a.ts" },
+          },
+          {
+            type: "tool_use",
+            id: "toolu_b",
+            name: "Read",
+            input: { file_path: "src/b.ts" },
+          },
+        ],
+      },
+    });
+
+    expect(events).toEqual([
+      {
+        type: "tool_start",
+        toolId: "toolu_a",
+        tool: "Read",
+        input: { file_path: "src/a.ts" },
+        parentToolUseId: "toolu_parent_456",
+      },
+      {
+        type: "tool_start",
+        toolId: "toolu_b",
+        tool: "Read",
+        input: { file_path: "src/b.ts" },
+        parentToolUseId: "toolu_parent_456",
       },
     ]);
   });
@@ -552,6 +607,118 @@ describe("parseClaudeLine", () => {
         tool: "Bash",
         input: {},
         parentToolUseId: null,
+      },
+    ]);
+  });
+
+  it("emits unknown for unrecognized top-level event types", () => {
+    const raw = { type: "new_feature_event", data: { foo: "bar" } };
+    const events = parse(raw);
+    expect(events).toEqual([
+      {
+        type: "unknown",
+        eventType: "new_feature_event",
+        raw,
+      },
+    ]);
+  });
+
+  it("emits unknown for unrecognized system subtypes", () => {
+    const raw = { type: "system", subtype: "new_subtype", info: "something" };
+    const events = parse(raw);
+    expect(events).toEqual([
+      {
+        type: "unknown",
+        eventType: "system/new_subtype",
+        raw,
+      },
+    ]);
+  });
+
+  it("does not emit unknown for known stream_event subtypes", () => {
+    const state = createState();
+    const events = parseLine(
+      {
+        type: "stream_event",
+        event: { type: "message_start", message: { model: "test", id: "msg_1" } },
+        parent_tool_use_id: null,
+      },
+      state,
+    );
+    expect(events).toEqual([]);
+  });
+
+  it("emits unknown for unrecognized stream_event subtypes", () => {
+    const raw = {
+      type: "stream_event",
+      event: { type: "new_stream_type", data: 123 },
+      parent_tool_use_id: null,
+    };
+    const events = parse(raw);
+    expect(events).toEqual([
+      {
+        type: "unknown",
+        eventType: "stream_event/new_stream_type",
+        raw,
+      },
+    ]);
+  });
+
+  it("returns empty for non-object JSON", () => {
+    const state = createState();
+    expect(
+      parseClaudeLine('"just a string"', state.blocks, state.parents, state.toolIdToParent),
+    ).toEqual([]);
+    expect(parseClaudeLine("42", state.blocks, state.parents, state.toolIdToParent)).toEqual([]);
+    expect(parseClaudeLine("null", state.blocks, state.parents, state.toolIdToParent)).toEqual([]);
+    expect(parseClaudeLine("true", state.blocks, state.parents, state.toolIdToParent)).toEqual([]);
+  });
+
+  it("returns empty for object without type field", () => {
+    const events = parse({ foo: "bar" });
+    expect(events).toEqual([]);
+  });
+
+  it("parses system/task_started to task_started", () => {
+    const events = parse({
+      type: "system",
+      subtype: "task_started",
+      task_id: "abc123",
+      tool_use_id: "toolu_456",
+      description: "Say hi",
+      task_type: "local_agent",
+      prompt: "Just say hi",
+    });
+    expect(events).toEqual([
+      {
+        type: "task_started",
+        taskId: "abc123",
+        toolUseId: "toolu_456",
+        description: "Say hi",
+        prompt: "Just say hi",
+      },
+    ]);
+  });
+
+  it("parses system/task_notification to task_done", () => {
+    const events = parse({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "abc123",
+      tool_use_id: "toolu_456",
+      status: "completed",
+      output_file: "",
+      summary: "Said hi",
+      usage: { total_tokens: 100, tool_uses: 0, duration_ms: 2500 },
+    });
+    expect(events).toEqual([
+      {
+        type: "task_done",
+        taskId: "abc123",
+        toolUseId: "toolu_456",
+        status: "completed",
+        summary: "Said hi",
+        durationMs: 2500,
       },
     ]);
   });
@@ -892,5 +1059,71 @@ describe("streamEvents", () => {
     const promise = collect(streamEvents(stream));
     stream.end();
     expect(await promise).toEqual([]);
+  });
+});
+
+describe("subagent fixture (examples/claude/subagent.jsonl)", () => {
+  function replayFixture(): AgentEvent[] {
+    const fixturePath = resolve(import.meta.dir, "../../examples/claude/subagent.jsonl");
+    const content = readFileSync(fixturePath, "utf-8");
+    const state = createState();
+    const events: AgentEvent[] = [];
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      events.push(...parseClaudeLine(trimmed, state.blocks, state.parents, state.toolIdToParent));
+    }
+    return events;
+  }
+
+  it("produces no unknown events", () => {
+    const events = replayFixture();
+    const unknowns = events.filter((e) => e.type === "unknown");
+    expect(unknowns).toEqual([]);
+  });
+
+  it("emits session_start as the first event", () => {
+    const events = replayFixture();
+    expect(events[0].type).toBe("session_start");
+  });
+
+  it("emits task_started and task_done for the subagent", () => {
+    const events = replayFixture();
+    const taskStarted = events.filter((e) => e.type === "task_started");
+    const taskDone = events.filter((e) => e.type === "task_done");
+    expect(taskStarted).toHaveLength(1);
+    expect(taskDone).toHaveLength(1);
+    if (taskStarted[0].type === "task_started" && taskDone[0].type === "task_done") {
+      expect(taskStarted[0].toolUseId).toBe(taskDone[0].toolUseId);
+    }
+  });
+
+  it("extracts subagent tool calls from assistant events", () => {
+    const events = replayFixture();
+    const subagentTools = events.filter(
+      (e) => e.type === "tool_start" && e.parentToolUseId !== null,
+    );
+    // The subagent uses: Bash, Bash, Read (3 tool calls)
+    expect(subagentTools).toHaveLength(3);
+    expect(subagentTools.map((e) => (e.type === "tool_start" ? e.tool : ""))).toEqual([
+      "Bash",
+      "Bash",
+      "Read",
+    ]);
+  });
+
+  it("resolves tool_done parentToolUseId for subagent tools", () => {
+    const events = replayFixture();
+    const subagentToolDones = events.filter(
+      (e) => e.type === "tool_done" && e.parentToolUseId !== null,
+    );
+    // 3 tool results from the subagent
+    expect(subagentToolDones).toHaveLength(3);
+  });
+
+  it("ends with a done event", () => {
+    const events = replayFixture();
+    const last = events[events.length - 1];
+    expect(last.type).toBe("done");
   });
 });

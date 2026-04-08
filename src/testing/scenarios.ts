@@ -88,12 +88,15 @@ export const NESTED_SUBAGENT: Scenario = {
       text: "I'll delegate the code review to a subagent for a thorough check.",
       toolCalls: [
         {
-          tool: "Task",
+          tool: "Agent",
           input: {
-            task: "Review src/lib/parser.ts for correctness, edge cases, and code style issues",
+            description:
+              "Review src/lib/parser.ts for correctness, edge cases, and code style issues",
+            prompt: "Review the parser module for correctness, edge cases, and code style issues",
           },
           result:
             "Review complete. Found 1 issue: the error message in line 42 is missing the actual invalid token. Everything else looks good.",
+          subagentDurationMs: 8500,
           subagent: [
             {
               text: "I'll review the parser module.",

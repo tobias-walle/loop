@@ -63,10 +63,16 @@ describe("formatToolLine", () => {
     expect(line).not.toContain("in ");
   });
 
-  test("formats Task as subagent", () => {
+  test("formats Task as agent", () => {
     const line = strip(formatToolLine("Task", { task: "Review all modules" }));
-    expect(line).toContain("Subagent");
-    expect(line).toContain('"Review all modules"');
+    expect(line).toContain("Agent:");
+    expect(line).toContain("Review all modules");
+  });
+
+  test("formats Agent tool", () => {
+    const line = strip(formatToolLine("Agent", { description: "Review code" }));
+    expect(line).toContain("Agent:");
+    expect(line).toContain("Review code");
   });
 
   test("formats unknown tool with first string arg", () => {
