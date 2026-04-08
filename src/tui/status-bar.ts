@@ -25,9 +25,14 @@ export class StatusBar implements Component, Focusable {
   private cursorPos = 0;
   private status: StatusInfo = {};
   private queued = false;
+  private startTime: number | null = null;
 
   setStatus(info: StatusInfo): void {
     this.status = info;
+  }
+
+  setStartTime(time: number): void {
+    this.startTime = time;
   }
 
   setQueued(queued: boolean): void {
@@ -53,9 +58,11 @@ export class StatusBar implements Component, Focusable {
     if (this.focused) {
       const before = this.inputValue.slice(0, this.cursorPos);
       const after = this.inputValue.slice(this.cursorPos);
-      const inputPart = `${before}${CURSOR_MARKER}${after}`;
-      const inputWidth = visibleWidth(this.inputValue);
-      const pad = Math.max(0, width - inputWidth);
+      // Thin line cursor: dimGray "▏"
+      const cursor = "\x1b[2;90m▏\x1b[0m";
+      const inputPart = `${before}${CURSOR_MARKER}${cursor}${after}`;
+      const contentWidth = visibleWidth(this.inputValue) + 1; // +1 for ▏
+      const pad = Math.max(0, width - contentWidth);
       return `${inputPart}${" ".repeat(pad)}`;
     }
     const inputWidth = visibleWidth(this.inputValue);
@@ -80,8 +87,9 @@ export class StatusBar implements Component, Focusable {
       parts.push(green(`$${s.costUsd.toFixed(2)}`));
     }
 
-    if (s.durationMs != null) {
-      parts.push(dim(formatDuration(s.durationMs)));
+    const durationMs = this.startTime != null ? Date.now() - this.startTime : s.durationMs;
+    if (durationMs != null) {
+      parts.push(dim(formatDuration(durationMs)));
     }
 
     if (this.queued) {

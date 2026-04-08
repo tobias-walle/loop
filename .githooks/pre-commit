@@ -1,0 +1,21 @@
+#!/bin/sh
+
+echo "Running pre-commit checks..."
+
+bun run check -- --error-on-warnings
+if [ $? -ne 0 ]; then
+  echo "Lint check failed. Commit aborted."
+  exit 1
+fi
+
+bun run typecheck
+if [ $? -ne 0 ]; then
+  echo "Type check failed. Commit aborted."
+  exit 1
+fi
+
+bun test
+if [ $? -ne 0 ]; then
+  echo "Tests failed. Commit aborted."
+  exit 1
+fi

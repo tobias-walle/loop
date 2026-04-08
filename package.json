@@ -1,5 +1,5 @@
 {
-  "name": "@loop/cli",
+  "name": "loop",
   "version": "0.1.0",
   "type": "module",
   "bin": {
@@ -10,12 +10,12 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target node",
     "test": "bun test",
-    "check": "biome check .",
-    "check:fix": "biome check --write .",
+    "check": "biome check --write --unsafe .",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "knip": "knip",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@mariozechner/pi-tui": "latest"

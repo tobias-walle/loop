@@ -18,7 +18,15 @@ export type Step =
 /** Configuration derived from CLI parsing. */
 export type LoopConfig = {
   steps: Step[];
-  command?: "init";
+  command?: "init" | "help" | "version";
+};
+
+/** Token usage counters. */
+export type TokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
 };
 
 /** Represents the current state of the pipeline during execution. */
@@ -29,6 +37,7 @@ export type PipelineState = {
   costUsd: number;
   durationMs: number;
   startTime: number;
+  usage: TokenUsage;
 };
 
 /** Context passed to the template renderer for a single iteration. */
@@ -50,6 +59,7 @@ export type RunResult = {
   success: boolean;
   totalCostUsd: number;
   totalDurationMs: number;
+  totalUsage: TokenUsage;
   stepResults: StepResult[];
 };
 
@@ -60,6 +70,14 @@ export type StepResult = {
   result: string;
   costUsd: number;
   durationMs: number;
+  usage: TokenUsage;
   exitReason: "done" | "loop_done" | "max_reached" | "error";
   error?: string;
+};
+
+/** Result of running the entire pipeline. */
+export type RunSummary = {
+  totalCostUsd: number;
+  totalDurationMs: number;
+  totalUsage: TokenUsage;
 };

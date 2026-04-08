@@ -204,8 +204,9 @@ describe("createEventRouter", () => {
 
     router.showStepHeader(1, 3, "Create an about page");
 
-    expect(root.children).toHaveLength(1);
-    const rendered = renderChild(root, 0);
+    // 1 blank line + header = 2
+    expect(root.children).toHaveLength(2);
+    const rendered = renderChild(root, 1);
     expect(rendered).toContain("Step 1/3");
     expect(rendered).toContain("Create an about page");
   });
@@ -216,8 +217,8 @@ describe("createEventRouter", () => {
     router.showStepHeader(1, 3, "First");
     router.showStepHeader(2, 3, "Second");
 
-    // First header (1) + 2 blank lines + second header (1) = 4
-    expect(root.children).toHaveLength(4);
+    // First: blank + header (2) + Second: blank + header (2) = 4 + gap blank = 5
+    expect(root.children).toHaveLength(5);
   });
 
   test("showStepHeader with iteration info", () => {
@@ -225,7 +226,7 @@ describe("createEventRouter", () => {
 
     router.showStepHeader(2, 3, "Review code", 3, 10);
 
-    const rendered = renderChild(root, 0);
+    const rendered = renderChild(root, 1);
     expect(rendered).toContain("iteration 3/10");
   });
 
@@ -233,7 +234,9 @@ describe("createEventRouter", () => {
     const { root, router } = setup();
 
     router.showCompletion("done", 83000);
-    const rendered = renderChild(root, 0);
+    // blank line + completion text = 2 children
+    expect(root.children).toHaveLength(2);
+    const rendered = renderChild(root, 1);
     expect(rendered).toContain("Done");
     expect(rendered).toContain("1m 23s");
   });
@@ -242,7 +245,7 @@ describe("createEventRouter", () => {
     const { root, router } = setup();
 
     router.showCompletion("loop_done", 221000, 2);
-    const rendered = renderChild(root, 0);
+    const rendered = renderChild(root, 1);
     expect(rendered).toContain("LOOP_DONE");
     expect(rendered).toContain("2 iterations");
   });
@@ -251,7 +254,7 @@ describe("createEventRouter", () => {
     const { root, router } = setup();
 
     router.showCompletion("max_reached", 60000, 10);
-    const rendered = renderChild(root, 0);
+    const rendered = renderChild(root, 1);
     expect(rendered).toContain("MAX reached");
     expect(rendered).toContain("10 iterations");
   });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ParseError, parseArgs } from "./parser";
+import { ParseError, formatHelp, parseArgs } from "./parser";
 
 describe("parseArgs", () => {
   describe("single task", () => {
@@ -31,6 +31,62 @@ describe("parseArgs", () => {
         steps: [],
         command: "init",
       });
+    });
+  });
+
+  describe("help", () => {
+    test("--help returns help command", () => {
+      const result = parseArgs(["--help"]);
+      expect(result).toEqual({ steps: [], command: "help" });
+    });
+
+    test("-h returns help command", () => {
+      const result = parseArgs(["-h"]);
+      expect(result).toEqual({ steps: [], command: "help" });
+    });
+
+    test("--help anywhere in args returns help", () => {
+      const result = parseArgs(["task", "--help"]);
+      expect(result).toEqual({ steps: [], command: "help" });
+    });
+  });
+
+  describe("version", () => {
+    test("--version returns version command", () => {
+      const result = parseArgs(["--version"]);
+      expect(result).toEqual({ steps: [], command: "version" });
+    });
+
+    test("-v returns version command", () => {
+      const result = parseArgs(["-v"]);
+      expect(result).toEqual({ steps: [], command: "version" });
+    });
+  });
+
+  describe("formatHelp", () => {
+    test("includes usage line", () => {
+      expect(formatHelp()).toContain("Usage:");
+    });
+
+    test("includes commands section", () => {
+      expect(formatHelp()).toContain("Commands:");
+      expect(formatHelp()).toContain("init");
+    });
+
+    test("includes flags section", () => {
+      const help = formatHelp();
+      expect(help).toContain("Flags:");
+      expect(help).toContain("--until");
+      expect(help).toContain("--repeat");
+      expect(help).toContain("--max");
+    });
+
+    test("includes examples section", () => {
+      expect(formatHelp()).toContain("Examples:");
+    });
+
+    test("includes groups section", () => {
+      expect(formatHelp()).toContain("Groups:");
     });
   });
 

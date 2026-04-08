@@ -2,7 +2,27 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentAdapter, AgentEvent, AgentSession } from "../agents/types.js";
 import { loadTemplate, renderTemplate } from "./template.js";
-import type { PipelineState, RunResult, Step, StepResult, TemplateContext } from "./types.js";
+import type {
+  PipelineState,
+  RunResult,
+  Step,
+  StepResult,
+  TemplateContext,
+  TokenUsage,
+} from "./types.js";
+
+function emptyUsage(): TokenUsage {
+  return { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 };
+}
+
+function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cacheCreationTokens: a.cacheCreationTokens + b.cacheCreationTokens,
+    cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
+  };
+}
 
 export interface RunnerOptions {
   agent: AgentAdapter;
@@ -109,6 +129,7 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
     costUsd: 0,
     durationMs: 0,
     startTime: Date.now(),
+    usage: emptyUsage(),
   };
 
   async function runStep(
@@ -121,6 +142,7 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
     let lastResult = "";
     let totalCost = 0;
     let totalDuration = 0;
+    let totalUsage = emptyUsage();
     let exitReason: StepResult["exitReason"] = "done";
     let errorMsg: string | undefined;
 
@@ -167,6 +189,7 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
       let result = "";
       let cost = 0;
       let duration = 0;
+      let usage = emptyUsage();
       let hadError = false;
 
       for await (const event of session.events) {
@@ -178,6 +201,12 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
           result = event.result;
           cost = event.costUsd;
           duration = event.durationMs;
+          usage = {
+            inputTokens: event.usage.inputTokens,
+            outputTokens: event.usage.outputTokens,
+            cacheCreationTokens: event.usage.cacheCreationTokens ?? 0,
+            cacheReadTokens: event.usage.cacheReadTokens ?? 0,
+          };
         } else if (event.type === "error") {
           hadError = true;
           errorMsg = event.message;
@@ -188,10 +217,12 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
       currentSession = null;
       totalCost += cost;
       totalDuration += duration;
+      totalUsage = addUsage(totalUsage, usage);
       lastResult = result;
 
       state.costUsd += cost;
       state.durationMs += duration;
+      state.usage = addUsage(state.usage, usage);
 
       if (hadError) {
         exitReason = "error";
@@ -262,6 +293,7 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
       result: lastResult,
       costUsd: totalCost,
       durationMs: totalDuration,
+      usage: totalUsage,
       exitReason,
       error: errorMsg,
     };
@@ -285,6 +317,7 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
               result: "",
               costUsd: 0,
               durationMs: 0,
+              usage: emptyUsage(),
               exitReason: "error",
               error: "Skipped due to abort",
             });
@@ -304,6 +337,7 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
               result: "",
               costUsd: 0,
               durationMs: 0,
+              usage: emptyUsage(),
               exitReason: "error",
               error: "Skipped due to previous error",
             });
@@ -317,12 +351,14 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
 
       const totalCost = stepResults.reduce((s, r) => s + r.costUsd, 0);
       const totalDuration = stepResults.reduce((s, r) => s + r.durationMs, 0);
+      const totalUsage = stepResults.reduce((s, r) => addUsage(s, r.usage), emptyUsage());
       const success = stepResults.every((r) => r.exitReason !== "error");
 
       return {
         success,
         totalCostUsd: totalCost,
         totalDurationMs: totalDuration,
+        totalUsage,
         stepResults,
       };
     },

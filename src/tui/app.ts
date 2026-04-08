@@ -1,10 +1,12 @@
 import { Box, Container, ProcessTerminal, TUI, Text, matchesKey } from "@mariozechner/pi-tui";
 import type { AgentEvent } from "../agents/types.js";
+import type { RunSummary, TokenUsage } from "../lib/types.js";
 import { dim } from "./colors.js";
 import {
   formatCompletion,
   formatError,
   formatRetry,
+  formatRunSummary,
   formatStepHeader,
   formatToolLine,
   formatUserMessage,
@@ -31,7 +33,10 @@ export interface LoopTUI {
     type: "done" | "loop_done" | "max_reached",
     durationMs: number,
     iterations?: number,
+    costUsd?: number,
+    usage?: TokenUsage,
   ): void;
+  showRunSummary(summary: RunSummary): void;
   showUserMessage(text: string): void;
   updateStatus(info: {
     step?: number;
@@ -74,7 +79,10 @@ export function createEventRouter(
     type: "done" | "loop_done" | "max_reached",
     durationMs: number,
     iterations?: number,
+    costUsd?: number,
+    usage?: TokenUsage,
   ) => void;
+  showRunSummary: (summary: RunSummary) => void;
   showUserMessage: (text: string) => void;
 } {
   const state: LoopTUIState = {
@@ -179,11 +187,11 @@ export function createEventRouter(
     max?: number,
   ): void {
     const header = formatStepHeader(step, totalSteps, task, iteration, max);
-    // Visual gap before headers (except first output)
+    // Visual gap before headers
     if (root.children.length > 0) {
       root.addChild(new Text("", 0, 0));
-      root.addChild(new Text("", 0, 0));
     }
+    root.addChild(new Text("", 0, 0));
     root.addChild(new Text(header, 0, 0));
     requestRender();
   }
@@ -192,9 +200,18 @@ export function createEventRouter(
     type: "done" | "loop_done" | "max_reached",
     durationMs: number,
     iterations?: number,
+    costUsd?: number,
+    usage?: TokenUsage,
   ): void {
-    const text = formatCompletion(type, durationMs, iterations);
+    root.addChild(new Text("", 0, 0));
+    const text = formatCompletion(type, durationMs, iterations, costUsd, usage);
     root.addChild(new Text(text, 0, 0));
+    requestRender();
+  }
+
+  function showRunSummary(summary: RunSummary): void {
+    root.addChild(new Text("", 0, 0));
+    root.addChild(new Text(formatRunSummary(summary), 0, 0));
     requestRender();
   }
 
@@ -204,7 +221,7 @@ export function createEventRouter(
     requestRender();
   }
 
-  return { state, handleEvent, showStepHeader, showCompletion, showUserMessage };
+  return { state, handleEvent, showStepHeader, showCompletion, showRunSummary, showUserMessage };
 }
 
 export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
@@ -230,6 +247,7 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
   return {
     start(): void {
       startTime = Date.now();
+      statusBar.setStartTime(startTime);
 
       tui.start();
 
@@ -276,8 +294,14 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
       type: "done" | "loop_done" | "max_reached",
       durationMs: number,
       iterations?: number,
+      costUsd?: number,
+      usage?: TokenUsage,
     ): void {
-      router.showCompletion(type, durationMs, iterations);
+      router.showCompletion(type, durationMs, iterations, costUsd, usage);
+    },
+
+    showRunSummary(summary: RunSummary): void {
+      router.showRunSummary(summary);
     },
 
     showUserMessage(text: string): void {

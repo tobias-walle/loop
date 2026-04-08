@@ -7,9 +7,72 @@ export class ParseError extends Error {
   }
 }
 
+const COMMANDS = {
+  init: "Create a LOOP.md template in the current directory",
+} as const;
+
+const FLAGS = {
+  "--until <condition>": "Loop until the agent signals the condition is met",
+  "--repeat <n>": "Repeat the task exactly n times",
+  "--max <n>": "Safety cap for --until loops (max iterations)",
+  "--help, -h": "Show this help message",
+  "--version, -v": "Show version number",
+} as const;
+
+const EXAMPLES = [
+  ['loop "Fix all TypeScript errors"', "Run a single task"],
+  ['loop "Write tests" "Review code"', "Run tasks sequentially"],
+  ['loop "Fix lint errors" --repeat 3', "Repeat a task 3 times"],
+  ['loop "Improve coverage" --until "Coverage above 80%" --max 5', "Loop with a condition and cap"],
+  ['loop [ "Write code" "Review" ] --repeat 3', "Repeat a group of tasks"],
+  ["loop init", "Create a LOOP.md template"],
+] as const;
+
+export function formatHelp(): string {
+  const lines: string[] = [
+    "Usage: loop <tasks...> [flags]",
+    "",
+    "Run AI agent tasks in sequence, loops, or groups.",
+    "",
+    "Commands:",
+  ];
+
+  for (const [cmd, desc] of Object.entries(COMMANDS)) {
+    lines.push(`  ${cmd.padEnd(24)} ${desc}`);
+  }
+
+  lines.push("", "Flags:");
+  for (const [flag, desc] of Object.entries(FLAGS)) {
+    lines.push(`  ${flag.padEnd(24)} ${desc}`);
+  }
+
+  lines.push("", "Groups:");
+  lines.push('  [ "task1" "task2" ]     Run multiple tasks as a single step');
+  lines.push("                         Flags apply to the whole group when placed after ]");
+
+  lines.push("", "Examples:");
+  for (const [cmd, desc] of EXAMPLES) {
+    lines.push(`  ${cmd}`);
+    lines.push(`      ${desc}`);
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
 export function parseArgs(args: string[]): LoopConfig {
   if (args.length === 0) {
-    throw new ParseError('No arguments provided. Usage: loop "task" or loop init');
+    throw new ParseError(`No arguments provided.\n\n${formatHelp()}`);
+  }
+
+  // Handle --help / -h anywhere in args
+  if (args.includes("--help") || args.includes("-h")) {
+    return { steps: [], command: "help" };
+  }
+
+  // Handle --version / -v
+  if (args.includes("--version") || args.includes("-v")) {
+    return { steps: [], command: "version" };
   }
 
   // Handle subcommands

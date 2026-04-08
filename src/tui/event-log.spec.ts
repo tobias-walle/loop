@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import type { TokenUsage } from "../lib/types.js";
 import {
   formatCompletion,
   formatError,
   formatRetry,
+  formatRunSummary,
   formatStepHeader,
+  formatTokens,
   formatToolLine,
   formatUserMessage,
 } from "./event-log.js";
@@ -131,6 +134,95 @@ describe("formatCompletion", () => {
     const text = strip(formatCompletion("max_reached", 60000, 10));
     expect(text).toContain("MAX reached");
     expect(text).toContain("10 iterations");
+  });
+
+  test("formats done with cost and tokens", () => {
+    const usage: TokenUsage = {
+      inputTokens: 15000,
+      outputTokens: 3200,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 5000,
+    };
+    const text = strip(formatCompletion("done", 45000, 1, 0.25, usage));
+    expect(text).toContain("$0.25");
+    expect(text).toContain("18.2k tokens");
+  });
+
+  test("formats loop_done with cost and tokens", () => {
+    const usage: TokenUsage = {
+      inputTokens: 50000,
+      outputTokens: 12000,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+    };
+    const text = strip(formatCompletion("loop_done", 120000, 3, 1.5, usage));
+    expect(text).toContain("$1.50");
+    expect(text).toContain("62.0k tokens");
+  });
+
+  test("formats loop_done with 1 iteration as singular", () => {
+    const text = strip(formatCompletion("loop_done", 10000, 1));
+    expect(text).toContain("1 iteration");
+    expect(text).not.toContain("1 iterations");
+  });
+});
+
+describe("formatTokens", () => {
+  test("formats small total token counts", () => {
+    const text = strip(
+      formatTokens({
+        inputTokens: 500,
+        outputTokens: 100,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      }),
+    );
+    expect(text).toBe("600 tokens");
+  });
+
+  test("formats thousands as k", () => {
+    const text = strip(
+      formatTokens({
+        inputTokens: 15000,
+        outputTokens: 3200,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      }),
+    );
+    expect(text).toBe("18.2k tokens");
+  });
+
+  test("formats millions as M", () => {
+    const text = strip(
+      formatTokens({
+        inputTokens: 1500000,
+        outputTokens: 200000,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      }),
+    );
+    expect(text).toBe("1.7M tokens");
+  });
+});
+
+describe("formatRunSummary", () => {
+  test("formats total summary", () => {
+    const text = strip(
+      formatRunSummary({
+        totalCostUsd: 2.35,
+        totalDurationMs: 180000,
+        totalUsage: {
+          inputTokens: 100000,
+          outputTokens: 25000,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 50000,
+        },
+      }),
+    );
+    expect(text).toContain("Total:");
+    expect(text).toContain("3m 00s");
+    expect(text).toContain("$2.35");
+    expect(text).toContain("125.0k tokens");
   });
 });
 

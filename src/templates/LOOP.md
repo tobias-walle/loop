@@ -38,6 +38,7 @@ Rules:
 {{#if repeat}}
 ## Repeat Info
 This is repetition {{iteration}} of {{repeat}}.
+Do NOT output LOOP_DONE or LOOP_CONTINUE markers. Those are only for --until loops.
 {{/if}}
 
 {{#if previousSummary}}

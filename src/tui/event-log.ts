@@ -1,3 +1,4 @@
+import type { RunSummary, TokenUsage } from "../lib/types.js";
 import {
   bold,
   boldCyan,
@@ -89,24 +90,60 @@ export function formatDuration(ms: number): string {
   return `${sec}s`;
 }
 
+export function formatTokens(usage: TokenUsage): string {
+  const total = usage.inputTokens + usage.outputTokens;
+  return `${formatTokenCount(total)} tokens`;
+}
+
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) {
+    return `${(n / 1_000_000).toFixed(1)}M`;
+  }
+  if (n >= 1_000) {
+    return `${(n / 1_000).toFixed(1)}k`;
+  }
+  return String(n);
+}
+
 export function formatCompletion(
   type: "done" | "loop_done" | "max_reached",
   durationMs: number,
   iterations?: number,
+  costUsd?: number,
+  usage?: TokenUsage,
 ): string {
-  const dur = formatDuration(durationMs);
+  const sep = dim(" · ");
+  const stats: string[] = [];
+
+  if (iterations != null && iterations > 1) {
+    stats.push(yellow(`${iterations} iterations`));
+  } else if (iterations != null && type === "loop_done") {
+    stats.push(yellow(`${iterations} iteration`));
+  }
+  stats.push(dim(formatDuration(durationMs)));
+  if (costUsd != null) stats.push(green(`$${costUsd.toFixed(2)}`));
+  if (usage != null) stats.push(cyan(formatTokens(usage)));
+
+  const details = stats.join(sep);
+
   switch (type) {
     case "done":
-      return green(`✅ Done (${dur})`);
-    case "loop_done": {
-      const iterPart = iterations != null ? `${iterations} iterations, ` : "";
-      return boldGreen(`🏁 LOOP_DONE (${iterPart}${dur})`);
-    }
-    case "max_reached": {
-      const iterPart = iterations != null ? `${iterations} iterations, ` : "";
-      return yellow(`⚠️ MAX reached (${iterPart}${dur})`);
-    }
+      return `${green("✅ Done")} ${dim("(")}${details}${dim(")")}`;
+    case "loop_done":
+      return `${boldGreen("🏁 LOOP_DONE")} ${dim("(")}${details}${dim(")")}`;
+    case "max_reached":
+      return `${yellow("⚠️ MAX reached")} ${dim("(")}${details}${dim(")")}`;
   }
+}
+
+export function formatRunSummary(summary: RunSummary): string {
+  const sep = dim(" · ");
+  const parts = [
+    dim(formatDuration(summary.totalDurationMs)),
+    green(`$${summary.totalCostUsd.toFixed(2)}`),
+    cyan(formatTokens(summary.totalUsage)),
+  ];
+  return `${dim("Total:")} ${parts.join(sep)}`;
 }
 
 export function formatRetry(attempt: number, maxRetries: number, error: string): string {
