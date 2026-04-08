@@ -151,6 +151,9 @@ async function main(): Promise<void> {
 
   tui.start();
 
+  // Ensure the terminal is always restored, even on unexpected exits.
+  process.on("exit", () => tui.stop());
+
   runner = createRunner(config.steps, {
     agent: adapter,
     projectRoot: process.cwd(),
