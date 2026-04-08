@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { parseClaudeLine } from "./claude.js";
+import { PassThrough } from "node:stream";
+import { parseClaudeLine, readLines, streamEvents } from "./claude.js";
+import type { AgentEvent } from "./types.js";
 
 function createState() {
   const blocks = new Map() as Parameters<typeof parseClaudeLine>[1];
@@ -476,7 +478,7 @@ describe("parseClaudeLine", () => {
     ]);
   });
 
-  it("skips assistant events", () => {
+  it("parses assistant events with text content", () => {
     const events = parse({
       type: "assistant",
       message: {
@@ -484,7 +486,32 @@ describe("parseClaudeLine", () => {
         content: [{ type: "text", text: "hello" }],
       },
     });
-    expect(events).toEqual([]);
+    expect(events).toEqual([
+      {
+        type: "text_done",
+        text: "hello",
+        parentToolUseId: null,
+      },
+    ]);
+  });
+
+  it("parses assistant events with tool_use content", () => {
+    const events = parse({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "tool_1", name: "Bash", input: { command: "ls" } }],
+      },
+    });
+    expect(events).toEqual([
+      {
+        type: "tool_start",
+        toolId: "tool_1",
+        tool: "Bash",
+        input: { command: "ls" },
+        parentToolUseId: null,
+      },
+    ]);
   });
 
   it("handles tool_use with empty input", () => {
@@ -527,5 +554,343 @@ describe("parseClaudeLine", () => {
         parentToolUseId: null,
       },
     ]);
+  });
+});
+
+describe("readLines", () => {
+  async function collect(gen: AsyncGenerator<string>): Promise<string[]> {
+    const result: string[] = [];
+    for await (const line of gen) {
+      result.push(line);
+    }
+    return result;
+  }
+
+  it("yields complete lines from a single chunk", async () => {
+    const stream = new PassThrough();
+    const promise = collect(readLines(stream));
+    stream.end("line1\nline2\nline3\n");
+    expect(await promise).toEqual(["line1", "line2", "line3"]);
+  });
+
+  it("handles data split across multiple chunks", async () => {
+    const stream = new PassThrough();
+    const promise = collect(readLines(stream));
+    stream.write("hel");
+    stream.write("lo\nwor");
+    stream.write("ld\n");
+    stream.end();
+    expect(await promise).toEqual(["hello", "world"]);
+  });
+
+  it("yields trailing data without newline on stream end", async () => {
+    const stream = new PassThrough();
+    const promise = collect(readLines(stream));
+    stream.end("line1\nno-trailing-newline");
+    expect(await promise).toEqual(["line1", "no-trailing-newline"]);
+  });
+
+  it("handles empty stream", async () => {
+    const stream = new PassThrough();
+    const promise = collect(readLines(stream));
+    stream.end();
+    expect(await promise).toEqual([]);
+  });
+
+  it("handles stream with only newlines", async () => {
+    const stream = new PassThrough();
+    const promise = collect(readLines(stream));
+    stream.end("\n\n\n");
+    expect(await promise).toEqual(["", "", ""]);
+  });
+
+  it("handles large number of lines", async () => {
+    const stream = new PassThrough();
+    const expected = Array.from({ length: 100 }, (_, i) => `line-${i}`);
+    const promise = collect(readLines(stream));
+    stream.end(`${expected.join("\n")}\n`);
+    expect(await promise).toEqual(expected);
+  });
+
+  it("handles chunks arriving with delays", async () => {
+    const stream = new PassThrough();
+    const promise = collect(readLines(stream));
+
+    stream.write("first\n");
+    await new Promise((r) => setTimeout(r, 10));
+    stream.write("second\n");
+    await new Promise((r) => setTimeout(r, 10));
+    stream.end("third\n");
+
+    expect(await promise).toEqual(["first", "second", "third"]);
+  });
+
+  it("handles stream error gracefully", async () => {
+    const stream = new PassThrough();
+    const promise = collect(readLines(stream));
+    stream.write("before-error\n");
+    stream.destroy(new Error("test error"));
+    const lines = await promise;
+    expect(lines).toEqual(["before-error"]);
+  });
+
+  it("handles multiple lines in a single chunk", async () => {
+    const stream = new PassThrough();
+    const promise = collect(readLines(stream));
+    stream.end("a\nb\nc\nd\n");
+    expect(await promise).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("handles line split exactly at chunk boundary", async () => {
+    const stream = new PassThrough();
+    const promise = collect(readLines(stream));
+    stream.write("abc\n");
+    stream.write("def\n");
+    stream.end();
+    expect(await promise).toEqual(["abc", "def"]);
+  });
+});
+
+describe("streamEvents", () => {
+  async function collect(gen: AsyncGenerator<AgentEvent>): Promise<AgentEvent[]> {
+    const result: AgentEvent[] = [];
+    for await (const event of gen) {
+      result.push(event);
+    }
+    return result;
+  }
+
+  function ndjson(...objects: object[]): string {
+    return `${objects.map((o) => JSON.stringify(o)).join("\n")}\n`;
+  }
+
+  it("parses a complete session from NDJSON stream", async () => {
+    const stream = new PassThrough();
+    const promise = collect(streamEvents(stream));
+
+    stream.end(
+      ndjson(
+        {
+          type: "system",
+          subtype: "init",
+          session_id: "s1",
+          tools: ["Bash"],
+          model: "claude-sonnet-4-20250514",
+        },
+        {
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "Done!",
+          duration_ms: 1000,
+          total_cost_usd: 0.01,
+          usage: { input_tokens: 10, output_tokens: 5 },
+        },
+      ),
+    );
+
+    const events = await promise;
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe("session_start");
+    expect(events[1].type).toBe("done");
+  });
+
+  it("stops yielding after a done event", async () => {
+    const stream = new PassThrough();
+    const promise = collect(streamEvents(stream));
+
+    stream.write(
+      ndjson({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "Done!",
+        duration_ms: 1000,
+        total_cost_usd: 0.01,
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    );
+
+    // Write more data after done — should be ignored
+    stream.write(
+      ndjson({
+        type: "system",
+        subtype: "init",
+        session_id: "s2",
+        tools: [],
+        model: "test",
+      }),
+    );
+    stream.end();
+
+    const events = await promise;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("done");
+  });
+
+  it("stops yielding after an error event", async () => {
+    const stream = new PassThrough();
+    const promise = collect(streamEvents(stream));
+
+    stream.end(
+      ndjson(
+        {
+          type: "result",
+          subtype: "error",
+          is_error: true,
+          result: "Something broke",
+          duration_ms: 500,
+          total_cost_usd: 0,
+          usage: { input_tokens: 5, output_tokens: 0 },
+        },
+        {
+          type: "system",
+          subtype: "init",
+          session_id: "s2",
+          tools: [],
+          model: "test",
+        },
+      ),
+    );
+
+    const events = await promise;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("error");
+  });
+
+  it("skips empty and whitespace lines", async () => {
+    const stream = new PassThrough();
+    const promise = collect(streamEvents(stream));
+
+    const initLine = JSON.stringify({
+      type: "system",
+      subtype: "init",
+      session_id: "s1",
+      tools: [],
+      model: "test",
+    });
+    const resultLine = JSON.stringify({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "ok",
+      duration_ms: 100,
+      total_cost_usd: 0,
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+
+    stream.end(`\n  \n${initLine}\n\n${resultLine}\n`);
+
+    const events = await promise;
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe("session_start");
+    expect(events[1].type).toBe("done");
+  });
+
+  it("skips malformed JSON lines", async () => {
+    const stream = new PassThrough();
+    const promise = collect(streamEvents(stream));
+
+    const resultLine = JSON.stringify({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "ok",
+      duration_ms: 100,
+      total_cost_usd: 0,
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+
+    stream.end(`not-json\n{broken\n${resultLine}\n`);
+
+    const events = await promise;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("done");
+  });
+
+  it("handles streaming text deltas", async () => {
+    const stream = new PassThrough();
+    const promise = collect(streamEvents(stream));
+
+    stream.end(
+      ndjson(
+        {
+          type: "stream_event",
+          event: {
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "text", text: "" },
+          },
+          parent_tool_use_id: null,
+        },
+        {
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "Hello " },
+          },
+          parent_tool_use_id: null,
+        },
+        {
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "world" },
+          },
+          parent_tool_use_id: null,
+        },
+        {
+          type: "stream_event",
+          event: { type: "content_block_stop", index: 0 },
+          parent_tool_use_id: null,
+        },
+        {
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "Hello world",
+          duration_ms: 100,
+          total_cost_usd: 0,
+          usage: { input_tokens: 1, output_tokens: 2 },
+        },
+      ),
+    );
+
+    const events = await promise;
+    expect(events.map((e) => e.type)).toEqual(["text_delta", "text_delta", "text_done", "done"]);
+  });
+
+  it("handles data arriving in small chunks across line boundaries", async () => {
+    const stream = new PassThrough();
+    const promise = collect(streamEvents(stream));
+
+    const line = JSON.stringify({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "ok",
+      duration_ms: 100,
+      total_cost_usd: 0,
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+
+    // Write the line character by character
+    for (const char of `${line}\n`) {
+      stream.write(char);
+    }
+    stream.end();
+
+    const events = await promise;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("done");
+  });
+
+  it("handles empty stream", async () => {
+    const stream = new PassThrough();
+    const promise = collect(streamEvents(stream));
+    stream.end();
+    expect(await promise).toEqual([]);
   });
 });

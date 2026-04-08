@@ -21,6 +21,7 @@ export type {
 export type { Scenario, ToolCall, Turn } from "./agents/stub.js";
 export { createStubAdapter } from "./agents/stub.js";
 export { createClaudeAdapter } from "./agents/claude.js";
+export type { ClaudeAdapterOptions } from "./agents/claude.js";
 export { ParseError, formatHelp, parseArgs } from "./lib/parser.js";
 export { createRunner } from "./lib/runner.js";
 export type { RunnerOptions } from "./lib/runner.js";

@@ -30,3 +30,32 @@ bun test && bun run check && bun run typecheck
 - `src/templates/` - Default LOOP.md template
 
 Key design principle: The runner and TUI never import agent-specific code. Everything goes through the `AgentAdapter` interface.
+
+## CLI Usage
+
+```bash
+# Run a single task
+loop "Fix all TypeScript errors"
+
+# Run tasks sequentially
+loop "Write tests" "Review code"
+
+# Repeat a task n times
+loop "Fix lint errors" --repeat 3
+
+# Loop with exit condition and safety cap
+loop "Improve coverage" --until "Coverage above 80%" --max 5
+
+# Repeat a group of tasks
+loop [ "Write code" "Review" ] --repeat 3
+
+# Create a LOOP.md template in the current directory
+loop init
+```
+
+### Claude Adapter Modes
+
+The Claude adapter (`src/agents/claude.ts`) supports two modes:
+
+- **Non-interactive (default):** Passes the prompt as a CLI argument to `claude -p`. Each loop iteration spawns a fresh process. No mid-session messaging. This is the most reliable mode.
+- **Interactive:** Uses `--input-format stream-json` to send prompts via stdin, enabling multi-turn conversations within a single session. Enable with `createClaudeAdapter({ interactive: true })`.
