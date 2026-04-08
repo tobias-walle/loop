@@ -34,7 +34,7 @@ type ClaudeEvent =
       tool_use_id: string;
       status: string;
       summary: string;
-      usage: { duration_ms: number };
+      usage: { duration_ms: number; total_tokens?: number };
     }
   | {
       type: "system";
@@ -83,6 +83,7 @@ type ClaudeEvent =
       type: "assistant";
       parent_tool_use_id: string | null;
       message: {
+        model?: string;
         content: Array<
           | { type: "text"; text: string }
           | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
@@ -123,6 +124,7 @@ export function parseClaudeLine(
   blocksByIndex: Map<number, BlockState>,
   parentToolUseIdByIndex: Map<number, string | null>,
   toolIdToParent: Map<string, string | null>,
+  taskModelByToolUseId?: Map<string, string>,
 ): AgentEvent[] {
   let parsed: Record<string, unknown>;
   try {
@@ -171,6 +173,8 @@ export function parseClaudeLine(
           status: typed.status,
           summary: typed.summary,
           durationMs: typed.usage.duration_ms,
+          model: taskModelByToolUseId?.get(typed.tool_use_id),
+          totalTokens: typed.usage.total_tokens,
         });
       } else if (typed.subtype === "task_progress") {
         // Subagent progress updates — tool calls are already extracted
@@ -331,6 +335,11 @@ export function parseClaudeLine(
       const parentId = typed.parent_tool_use_id ?? null;
       if (parentId === null) break;
 
+      // Track subagent model from the first assistant event
+      if (typed.message.model && taskModelByToolUseId && !taskModelByToolUseId.has(parentId)) {
+        taskModelByToolUseId.set(parentId, typed.message.model);
+      }
+
       for (const block of typed.message.content) {
         if (block.type === "tool_use") {
           toolIdToParent.set(block.id, parentId);
@@ -441,12 +450,19 @@ export async function* streamEvents(stdout: Readable): AsyncGenerator<AgentEvent
   const blocksByIndex = new Map<number, BlockState>();
   const parentToolUseIdByIndex = new Map<number, string | null>();
   const toolIdToParent = new Map<string, string | null>();
+  const taskModelByToolUseId = new Map<string, string>();
 
   for await (const line of readLines(stdout)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    const events = parseClaudeLine(trimmed, blocksByIndex, parentToolUseIdByIndex, toolIdToParent);
+    const events = parseClaudeLine(
+      trimmed,
+      blocksByIndex,
+      parentToolUseIdByIndex,
+      toolIdToParent,
+      taskModelByToolUseId,
+    );
     for (const event of events) {
       yield event;
       if (event.type === "done" || event.type === "error") {

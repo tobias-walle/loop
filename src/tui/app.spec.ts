@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Container } from "@mariozechner/pi-tui";
 import { createEventRouter } from "./app.js";
 import { PipeBox } from "./pipe-box.js";
+import { ThinkingIndicator } from "./thinking-indicator.js";
 
 function setup() {
   const root = new Container();
@@ -73,7 +74,38 @@ describe("createEventRouter", () => {
     expect(rendered).toContain("src/index.ts");
   });
 
-  test("task_started creates a nested container", () => {
+  test("task_started is a no-op when tool_start already created the container", () => {
+    const { root, router } = setup();
+
+    // tool_start creates the visual container
+    router.handleEvent(
+      {
+        type: "tool_start",
+        toolId: "t1",
+        tool: "Agent",
+        input: { description: "Review code" },
+        parentToolUseId: null,
+      },
+      0,
+    );
+    expect(root.children).toHaveLength(2);
+
+    // task_started should not add anything
+    router.handleEvent(
+      {
+        type: "task_started",
+        taskId: "task_1",
+        toolUseId: "t1",
+        description: "Review code",
+        prompt: "Review",
+      },
+      0,
+    );
+    expect(root.children).toHaveLength(2);
+    expect(router.state.containerStack).toHaveLength(2);
+  });
+
+  test("task_started creates container as fallback when no preceding tool_start", () => {
     const { root, router } = setup();
 
     router.handleEvent(
@@ -93,7 +125,7 @@ describe("createEventRouter", () => {
     expect(router.state.containerStack).toHaveLength(2);
   });
 
-  test("tool_start for Agent/Task is suppressed (task_started handles visuals)", () => {
+  test("tool_start for Agent creates nested container with model info", () => {
     const { root, router } = setup();
 
     router.handleEvent(
@@ -101,14 +133,18 @@ describe("createEventRouter", () => {
         type: "tool_start",
         toolId: "t1",
         tool: "Agent",
-        input: { description: "Review code" },
+        input: { description: "Review code", model: "claude-haiku-4-5" },
         parentToolUseId: null,
       },
       0,
     );
 
-    // Agent tool_start should produce no output
-    expect(root.children).toHaveLength(0);
+    // Header text + PipeBox
+    expect(root.children).toHaveLength(2);
+    const rendered = renderChild(root, 0);
+    expect(rendered).toContain("Agent: Review code");
+    expect(rendered).toContain("claude-haiku-4-5");
+    expect(root.children[1]).toBeInstanceOf(PipeBox);
   });
 
   test("events with parentToolUseId route to subagent container", () => {
@@ -147,7 +183,7 @@ describe("createEventRouter", () => {
     expect(subBox.children).toHaveLength(2);
   });
 
-  test("task_done pops container and shows summary", () => {
+  test("task_done pops container and shows summary with model and tokens", () => {
     const { root, router } = setup();
 
     router.handleEvent(
@@ -170,6 +206,8 @@ describe("createEventRouter", () => {
         status: "completed",
         summary: "Review finished",
         durationMs: 3000,
+        model: "claude-haiku-4-5",
+        totalTokens: 16934,
       },
       0,
     );
@@ -235,11 +273,12 @@ describe("createEventRouter", () => {
 
     router.showStepHeader(1, 3, "Create an about page");
 
-    // 1 blank line + header = 2
-    expect(root.children).toHaveLength(2);
+    // 1 blank line + header + thinking indicator = 3
+    expect(root.children).toHaveLength(3);
     const rendered = renderChild(root, 1);
     expect(rendered).toContain("Step 1/3");
     expect(rendered).toContain("Create an about page");
+    expect(root.children[2]).toBeInstanceOf(ThinkingIndicator);
   });
 
   test("showStepHeader adds gap before second header", () => {
@@ -248,8 +287,11 @@ describe("createEventRouter", () => {
     router.showStepHeader(1, 3, "First");
     router.showStepHeader(2, 3, "Second");
 
-    // First: blank + header (2) + Second: blank + header (2) = 4
-    expect(root.children).toHaveLength(4);
+    // First: blank + header + thinking (3) + Second: blank + header + thinking (3) = 6
+    // (first thinking indicator is removed when showStepHeader resets, but it was on root so stays)
+    // Actually: showStepHeader clears thinkingIndicator state but doesn't remove the first
+    // because the second showStepHeader calls removeThinkingIndicator first.
+    expect(root.children).toHaveLength(5);
   });
 
   test("showStepHeader with iteration info", () => {
@@ -259,6 +301,24 @@ describe("createEventRouter", () => {
 
     const rendered = renderChild(root, 1);
     expect(rendered).toContain("iteration 3/10");
+  });
+
+  test("thinking indicator is removed on first agent event", () => {
+    const { root, router } = setup();
+
+    router.showStepHeader(1, 1, "Do stuff");
+
+    // spacer + header + thinking = 3
+    expect(root.children).toHaveLength(3);
+    expect(router.state.thinkingIndicator).not.toBeNull();
+
+    router.handleEvent({ type: "text_delta", text: "Hi", parentToolUseId: null }, 0);
+
+    // thinking removed, text_delta added: spacer + header + text = 3
+    expect(root.children).toHaveLength(3);
+    expect(router.state.thinkingIndicator).toBeNull();
+    // The thinking indicator should no longer be in the tree
+    expect(root.children.some((c) => c instanceof ThinkingIndicator)).toBe(false);
   });
 
   test("showCompletion adds marker", () => {

@@ -28,6 +28,8 @@ export type AgentEvent =
       status: string;
       summary: string;
       durationMs: number;
+      model?: string;
+      totalTokens?: number;
     }
   | { type: "unknown"; eventType: string; raw: unknown };
 

@@ -718,6 +718,8 @@ describe("parseClaudeLine", () => {
         toolUseId: "toolu_456",
         status: "completed",
         summary: "Said hi",
+        model: undefined,
+        totalTokens: 100,
         durationMs: 2500,
       },
     ]);
@@ -1067,11 +1069,14 @@ describe("subagent fixture (examples/claude/subagent.jsonl)", () => {
     const fixturePath = resolve(import.meta.dir, "../../examples/claude/subagent.jsonl");
     const content = readFileSync(fixturePath, "utf-8");
     const state = createState();
+    const taskModels = new Map<string, string>();
     const events: AgentEvent[] = [];
     for (const line of content.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      events.push(...parseClaudeLine(trimmed, state.blocks, state.parents, state.toolIdToParent));
+      events.push(
+        ...parseClaudeLine(trimmed, state.blocks, state.parents, state.toolIdToParent, taskModels),
+      );
     }
     return events;
   }
@@ -1119,6 +1124,16 @@ describe("subagent fixture (examples/claude/subagent.jsonl)", () => {
     );
     // 3 tool results from the subagent
     expect(subagentToolDones).toHaveLength(3);
+  });
+
+  it("includes model and totalTokens in task_done", () => {
+    const events = replayFixture();
+    const taskDone = events.find((e) => e.type === "task_done");
+    expect(taskDone).toBeDefined();
+    if (taskDone?.type === "task_done") {
+      expect(taskDone.model).toBe("claude-haiku-4-5-20251001");
+      expect(taskDone.totalTokens).toBe(16934);
+    }
   });
 
   it("ends with a done event", () => {

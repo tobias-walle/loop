@@ -2,6 +2,7 @@ import {
   type Component,
   Container,
   ProcessTerminal,
+  Spacer,
   TUI,
   Text,
   matchesKey,
@@ -15,11 +16,13 @@ import {
   formatRetry,
   formatRunSummary,
   formatStepHeader,
+  formatTokenCount,
   formatToolLine,
   formatUserMessage,
 } from "./event-log.js";
 import { PipeBox } from "./pipe-box.js";
 import { StatusBar } from "./status-bar.js";
+import { ThinkingIndicator } from "./thinking-indicator.js";
 
 export interface LoopTUIOptions {
   onUserMessage?: (message: string) => void;
@@ -57,7 +60,11 @@ export interface LoopTUI {
 }
 
 /** Any component that can hold children (Container, PipeBox, etc.) */
-type ChildContainer = Component & { children: Component[]; addChild(c: Component): void };
+type ChildContainer = Component & {
+  children: Component[];
+  addChild(c: Component): void;
+  removeChild(c: Component): void;
+};
 
 /**
  * Internal state used for event routing.
@@ -67,6 +74,7 @@ export interface LoopTUIState {
   containerStack: ChildContainer[];
   toolIdToContainer: Map<string, ChildContainer>;
   textBlocks: Map<string, { textRef: Text; accumulated: string }>;
+  thinkingIndicator: { node: ThinkingIndicator; parent: ChildContainer } | null;
 }
 
 /**
@@ -100,10 +108,19 @@ export function createEventRouter(
     containerStack: [root],
     toolIdToContainer: new Map(),
     textBlocks: new Map(),
+    thinkingIndicator: null,
   };
 
   function currentContainer(): ChildContainer {
     return state.containerStack[state.containerStack.length - 1];
+  }
+
+  function removeThinkingIndicator(): void {
+    if (state.thinkingIndicator) {
+      state.thinkingIndicator.node.stop();
+      state.thinkingIndicator.parent.removeChild(state.thinkingIndicator.node);
+      state.thinkingIndicator = null;
+    }
   }
 
   function containerForEvent(parentToolUseId: string | null): ChildContainer {
@@ -115,6 +132,23 @@ export function createEventRouter(
   }
 
   function handleEvent(event: AgentEvent, _stepIndex: number): void {
+    if (state.thinkingIndicator) {
+      if (event.type === "session_start") {
+        // Agent process is connected — switch from "Waiting..." to "Thinking..."
+        state.thinkingIndicator.node.setText("Thinking...");
+        requestRender();
+      } else if (
+        event.type === "text_delta" ||
+        event.type === "tool_start" ||
+        event.type === "task_started" ||
+        event.type === "error"
+      ) {
+        // Agent produced visible output — remove the indicator
+        removeThinkingIndicator();
+        requestRender();
+      }
+    }
+
     switch (event.type) {
       case "text_delta": {
         const key = event.parentToolUseId ?? "__root__";
@@ -140,8 +174,19 @@ export function createEventRouter(
       }
 
       case "tool_start": {
-        // Agent/Task tools are visualized by the task_started/task_done lifecycle events instead.
+        // Agent/Task tools: render the start line and create the nested container here,
+        // since the tool input carries model info that task_started lacks.
         if (event.tool === "Task" || event.tool === "Agent") {
+          const container = containerForEvent(event.parentToolUseId);
+          const description = String(event.input?.description ?? "");
+          const model = event.input?.model;
+          const modelSuffix = typeof model === "string" && model ? ` (${model})` : "";
+          container.addChild(new Text(dim(`┌ ${event.tool}: ${description}${modelSuffix}`), 0, 0));
+          const subBox = new PipeBox();
+          container.addChild(subBox);
+          state.containerStack.push(subBox);
+          state.toolIdToContainer.set(event.toolId, subBox);
+          requestRender();
           break;
         }
 
@@ -175,13 +220,18 @@ export function createEventRouter(
       }
 
       case "task_started": {
-        const container = currentContainer();
-        container.addChild(new Text(dim(`┌ Agent: ${event.description}`), 0, 0));
-        const subBox = new PipeBox();
-        container.addChild(subBox);
-        state.containerStack.push(subBox);
-        state.toolIdToContainer.set(event.toolUseId, subBox);
-        requestRender();
+        // Visual setup already handled by tool_start for Agent/Task.
+        // Only wire up the toolUseId → container mapping if not already present
+        // (covers edge cases where task_started arrives without a preceding tool_start).
+        if (!state.toolIdToContainer.has(event.toolUseId)) {
+          const container = currentContainer();
+          container.addChild(new Text(dim(`┌ Agent: ${event.description}`), 0, 0));
+          const subBox = new PipeBox();
+          container.addChild(subBox);
+          state.containerStack.push(subBox);
+          state.toolIdToContainer.set(event.toolUseId, subBox);
+          requestRender();
+        }
         break;
       }
 
@@ -200,8 +250,10 @@ export function createEventRouter(
           state.toolIdToContainer.delete(event.toolUseId);
         }
         const durationSec = (event.durationMs / 1000).toFixed(1);
+        const meta: string[] = [`${durationSec}s`];
+        if (event.totalTokens != null) meta.push(`${formatTokenCount(event.totalTokens)} tokens`);
         parent.addChild(
-          new Text(dim(`└ ${event.status}: ${event.summary} (${durationSec}s)`), 0, 0),
+          new Text(dim(`└ ${event.status}: ${event.summary} (${meta.join(" · ")})`), 0, 0),
         );
         requestRender();
         break;
@@ -224,9 +276,14 @@ export function createEventRouter(
     state.containerStack.length = 1;
     state.toolIdToContainer.clear();
     state.textBlocks.clear();
+    removeThinkingIndicator();
     // Visual gap before headers
-    root.addChild(new Text("", 0, 0));
+    root.addChild(new Spacer());
     root.addChild(new Text(header, 0, 0));
+    const thinking = new ThinkingIndicator(requestRender);
+    root.addChild(thinking);
+    thinking.start();
+    state.thinkingIndicator = { node: thinking, parent: root };
     requestRender();
   }
 
@@ -237,14 +294,14 @@ export function createEventRouter(
     costUsd?: number,
     usage?: TokenUsage,
   ): void {
-    root.addChild(new Text("", 0, 0));
+    root.addChild(new Spacer());
     const text = formatCompletion(type, durationMs, iterations, costUsd, usage);
     root.addChild(new Text(text, 0, 0));
     requestRender();
   }
 
   function showRunSummary(summary: RunSummary): void {
-    root.addChild(new Text("", 0, 0));
+    root.addChild(new Spacer());
     root.addChild(new Text(formatRunSummary(summary), 0, 0));
     requestRender();
   }
