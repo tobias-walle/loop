@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Scenario } from "../agents/stub.js";
-import { createTestRunner, runToCompletion } from "../testing/helpers.js";
-import { RALPH_LOOP_TWO_ITERS, SIMPLE_TEXT } from "../testing/scenarios.js";
+import { SIMPLE_TEXT } from "../testing/scenarios/basic.js";
+import { RALPH_LOOP_TWO_ITERS } from "../testing/scenarios/loops.js";
+import { createTestRunner, runToCompletion } from "../testing/test-setup.js";
 import { createRunner } from "./runner.js";
 import type { Step } from "./types.js";
 

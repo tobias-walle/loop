@@ -17,7 +17,8 @@
         "useImportType": "error"
       },
       "suspicious": {
-        "noExplicitAny": "warn"
+        "noExplicitAny": "warn",
+        "noConsole": "error"
       },
       "correctness": {
         "noUnusedVariables": "error",
@@ -40,5 +41,17 @@
   },
   "files": {
     "ignore": ["node_modules", "dist", "bun.lock"]
-  }
+  },
+  "overrides": [
+    {
+      "include": ["src/cli.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    }
+  ]
 }

@@ -1,8 +1,5 @@
 import type { Component } from "@mariozechner/pi-tui";
-
-const ESC = "\x1b[";
-const RESET = `${ESC}0m`;
-const ITALIC = `${ESC}3m`;
+import { ITALIC, RESET, rgbFg } from "../../lib/ansi.js";
 
 const MAX_TEXT_LEN = "Thinking...".length;
 
@@ -20,10 +17,6 @@ const BRIGHT_RGB: [number, number, number] = [200, 200, 200];
 
 function lerp(a: number, b: number, t: number): number {
   return Math.round(a + (b - a) * t);
-}
-
-function rgbFg(r: number, g: number, b: number): string {
-  return `${ESC}38;2;${r};${g};${b}m`;
 }
 
 /**

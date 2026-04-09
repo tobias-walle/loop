@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { CURSOR_MARKER } from "@mariozechner/pi-tui";
-import { StatusBar } from "./status-bar.js";
+import { StatusBar } from "./components/status-bar.js";
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape stripping requires matching control chars
 const ANSI_RE = /\x1b\[[0-9;]*m/g;

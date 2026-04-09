@@ -1,4 +1,3 @@
-import type { RunSummary, TokenUsage } from "../lib/types.js";
 import {
   bold,
   boldCyan,
@@ -11,7 +10,8 @@ import {
   green,
   magenta,
   yellow,
-} from "./colors.js";
+} from "../lib/ansi.js";
+import type { RunSummary, TokenUsage } from "../lib/types.js";
 
 export function formatToolLine(
   tool: string,

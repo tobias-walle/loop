@@ -1,6 +1,26 @@
 import { CURSOR_MARKER, type Component, type Focusable, visibleWidth } from "@mariozechner/pi-tui";
-import { cyan, dim, dimGray, green, yellow } from "./colors.js";
-import { formatDuration } from "./event-log.js";
+import {
+  KEY_BACKSPACE,
+  KEY_BACKSPACE_ALT,
+  KEY_CTRL_A,
+  KEY_CTRL_E,
+  KEY_DELETE,
+  KEY_END,
+  KEY_ENTER,
+  KEY_ESCAPE,
+  KEY_ESCAPE_DOUBLE,
+  KEY_HOME,
+  KEY_LEFT,
+  KEY_NEWLINE,
+  KEY_RIGHT,
+  cursorStyle,
+  cyan,
+  dim,
+  dimGray,
+  green,
+  yellow,
+} from "../../lib/ansi.js";
+import { formatDuration } from "../formatters.js";
 
 interface StatusInfo {
   step?: number;
@@ -59,8 +79,7 @@ export class StatusBar implements Component, Focusable {
     if (this.focused) {
       const before = this.inputValue.slice(0, this.cursorPos);
       const after = this.inputValue.slice(this.cursorPos);
-      // Thin line cursor: dimGray "▏"
-      const cursor = "\x1b[2;90m▏\x1b[0m";
+      const cursor = cursorStyle();
       const inputPart = `${before}${CURSOR_MARKER}${cursor}${after}`;
       const contentWidth = visibleWidth(this.inputValue) + 1; // +1 for ▏
       const pad = Math.max(0, width - contentWidth);
@@ -100,73 +119,79 @@ export class StatusBar implements Component, Focusable {
     return `${text}${" ".repeat(pad)}`;
   }
 
+  private keyHandlers: ReadonlyMap<string, () => void> = new Map<string, () => void>([
+    [KEY_ENTER, () => this.submitInput()],
+    [KEY_NEWLINE, () => this.submitInput()],
+    [KEY_ESCAPE, () => this.clearInput()],
+    [KEY_ESCAPE_DOUBLE, () => this.clearInput()],
+    [KEY_BACKSPACE, () => this.deleteBack()],
+    [KEY_BACKSPACE_ALT, () => this.deleteBack()],
+    [KEY_DELETE, () => this.deleteForward()],
+    [KEY_LEFT, () => this.moveCursorLeft()],
+    [KEY_RIGHT, () => this.moveCursorRight()],
+    [KEY_HOME, () => this.moveCursorHome()],
+    [KEY_CTRL_A, () => this.moveCursorHome()],
+    [KEY_END, () => this.moveCursorEnd()],
+    [KEY_CTRL_E, () => this.moveCursorEnd()],
+  ]);
+
   handleInput(data: string): void {
-    // Enter
-    if (data === "\r" || data === "\n") {
-      if (this.inputValue.length > 0 && this.onSubmit) {
-        this.onSubmit(this.inputValue);
-        this.inputValue = "";
-        this.cursorPos = 0;
-      }
-      return;
-    }
-
-    // Escape
-    if (data === "\x1b" || data === "\x1b\x1b") {
-      this.inputValue = "";
-      this.cursorPos = 0;
-      return;
-    }
-
-    // Backspace
-    if (data === "\x7f" || data === "\b") {
-      if (this.cursorPos > 0) {
-        this.inputValue =
-          this.inputValue.slice(0, this.cursorPos - 1) + this.inputValue.slice(this.cursorPos);
-        this.cursorPos--;
-      }
-      return;
-    }
-
-    // Delete
-    if (data === "\x1b[3~") {
-      if (this.cursorPos < this.inputValue.length) {
-        this.inputValue =
-          this.inputValue.slice(0, this.cursorPos) + this.inputValue.slice(this.cursorPos + 1);
-      }
-      return;
-    }
-
-    // Left arrow
-    if (data === "\x1b[D") {
-      if (this.cursorPos > 0) this.cursorPos--;
-      return;
-    }
-
-    // Right arrow
-    if (data === "\x1b[C") {
-      if (this.cursorPos < this.inputValue.length) this.cursorPos++;
-      return;
-    }
-
-    // Home / Ctrl+A
-    if (data === "\x1b[H" || data === "\x01") {
-      this.cursorPos = 0;
-      return;
-    }
-
-    // End / Ctrl+E
-    if (data === "\x1b[F" || data === "\x05") {
-      this.cursorPos = this.inputValue.length;
+    const handler = this.keyHandlers.get(data);
+    if (handler) {
+      handler();
       return;
     }
 
     // Ignore other escape sequences
-    if (data.startsWith("\x1b")) return;
+    if (data.startsWith(KEY_ESCAPE)) return;
 
     // Regular character input
     this.inputValue =
       this.inputValue.slice(0, this.cursorPos) + data + this.inputValue.slice(this.cursorPos);
     this.cursorPos += data.length;
+  }
+
+  private submitInput(): void {
+    if (this.inputValue.length > 0 && this.onSubmit) {
+      this.onSubmit(this.inputValue);
+      this.inputValue = "";
+      this.cursorPos = 0;
+    }
+  }
+
+  private clearInput(): void {
+    this.inputValue = "";
+    this.cursorPos = 0;
+  }
+
+  private deleteBack(): void {
+    if (this.cursorPos > 0) {
+      this.inputValue =
+        this.inputValue.slice(0, this.cursorPos - 1) + this.inputValue.slice(this.cursorPos);
+      this.cursorPos--;
+    }
+  }
+
+  private deleteForward(): void {
+    if (this.cursorPos < this.inputValue.length) {
+      this.inputValue =
+        this.inputValue.slice(0, this.cursorPos) + this.inputValue.slice(this.cursorPos + 1);
+    }
+  }
+
+  private moveCursorLeft(): void {
+    if (this.cursorPos > 0) this.cursorPos--;
+  }
+
+  private moveCursorRight(): void {
+    if (this.cursorPos < this.inputValue.length) this.cursorPos++;
+  }
+
+  private moveCursorHome(): void {
+    this.cursorPos = 0;
+  }
+
+  private moveCursorEnd(): void {
+    this.cursorPos = this.inputValue.length;
   }
 }

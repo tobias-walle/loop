@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Container } from "@mariozechner/pi-tui";
 import { createEventRouter } from "./app.js";
-import { PipeBox } from "./pipe-box.js";
-import { ThinkingIndicator } from "./thinking-indicator.js";
+import { PipeBox } from "./components/pipe-box.js";
+import { ThinkingIndicator } from "./components/thinking-indicator.js";
 
 function setup() {
   const root = new Container();

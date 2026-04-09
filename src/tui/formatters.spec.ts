@@ -9,7 +9,7 @@ import {
   formatTokens,
   formatToolLine,
   formatUserMessage,
-} from "./event-log.js";
+} from "./formatters.js";
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape stripping requires matching control chars
 const ANSI_RE = /\x1b\[[0-9;]*m/g;

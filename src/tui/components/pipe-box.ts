@@ -1,5 +1,5 @@
 import type { Component } from "@mariozechner/pi-tui";
-import { dim } from "./colors.js";
+import { dim } from "../../lib/ansi.js";
 
 const PIPE_PREFIX = dim("│ ");
 
