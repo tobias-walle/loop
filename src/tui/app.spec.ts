@@ -300,7 +300,7 @@ describe("createEventRouter", () => {
     router.showStepHeader(2, 3, "Review code", 3, 10);
 
     const rendered = renderChild(root, 1);
-    expect(rendered).toContain("iteration 3/10");
+    expect(rendered).toContain("#3/10");
   });
 
   test("thinking indicator is removed on first agent event", () => {

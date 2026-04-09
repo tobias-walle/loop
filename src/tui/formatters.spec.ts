@@ -104,12 +104,17 @@ describe("formatStepHeader", () => {
 
   test("includes iteration when provided", () => {
     const header = strip(formatStepHeader(2, 3, "Review", 3));
-    expect(header).toContain("iteration 3");
+    expect(header).toContain("#3");
   });
 
   test("includes iteration and max when both provided", () => {
     const header = strip(formatStepHeader(2, 3, "Review", 3, 10));
-    expect(header).toContain("iteration 3/10");
+    expect(header).toContain("#3/10");
+  });
+
+  test("includes model when provided", () => {
+    const header = strip(formatStepHeader(1, 2, "Write code", 1, 3, "claude-opus-4-6[1m]"));
+    expect(header).toContain("(claude-opus-4-6[1m])");
   });
 });
 

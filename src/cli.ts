@@ -110,6 +110,7 @@ async function main(): Promise<void> {
   });
 
   tui.start();
+  tui.showSessionInfo(path.basename(sessionDir));
   logger.debug("TUI initialized", { source: "loop", type: "tui_started" });
 
   // Ensure the terminal is always restored, even on unexpected exits.
@@ -132,18 +133,20 @@ async function main(): Promise<void> {
     onStepStart: (stepIndex, step, iteration) => {
       const task = step.type === "task" ? step.task : step.tasks.join(", ");
       const isLoop = step.until != null || (step.repeat != null && step.repeat > 1);
+      const maxDisplay =
+        step.max ?? (step.repeat != null && step.repeat > 1 ? step.repeat : undefined);
       tui.showStepHeader(
         stepIndex + 1,
         config.steps.length,
         task,
         isLoop ? iteration : undefined,
-        step.max,
+        maxDisplay,
       );
       tui.updateStatus({
         step: stepIndex + 1,
         totalSteps: config.steps.length,
         iteration: isLoop ? iteration : undefined,
-        max: step.max,
+        max: maxDisplay,
         costUsd: runner.getState().costUsd,
       });
     },

@@ -21,6 +21,7 @@ export interface LoopTUI {
     task: string,
     iteration?: number,
     max?: number,
+    model?: string,
   ): void;
   showCompletion(
     type: "done" | "loop_done" | "max_reached",
@@ -29,6 +30,7 @@ export interface LoopTUI {
     costUsd?: number,
     usage?: TokenUsage,
   ): void;
+  showSessionInfo(sessionId: string): void;
   showRunSummary(summary: RunSummary): void;
   showUserMessage(text: string): void;
   updateStatus(info: {
@@ -110,8 +112,9 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
       task: string,
       iteration?: number,
       max?: number,
+      model?: string,
     ): void {
-      router.showStepHeader(step, totalSteps, task, iteration, max);
+      router.showStepHeader(step, totalSteps, task, iteration, max, model);
     },
 
     showCompletion(
@@ -122,6 +125,10 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
       usage?: TokenUsage,
     ): void {
       router.showCompletion(type, durationMs, iterations, costUsd, usage);
+    },
+
+    showSessionInfo(sessionId: string): void {
+      router.showSessionInfo(sessionId);
     },
 
     showRunSummary(summary: RunSummary): void {

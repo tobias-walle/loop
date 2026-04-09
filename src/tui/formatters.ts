@@ -69,16 +69,18 @@ export function formatStepHeader(
   task: string,
   iteration?: number,
   max?: number,
+  model?: string,
 ): string {
-  let iterPart = "";
-  if (iteration != null) {
-    iterPart = max != null ? ` - iteration ${iteration}/${max}` : ` - iteration ${iteration}`;
-  }
   const stepLabel = boldCyan(`Step ${step}/${totalSteps}`);
+  let iterLabel = "";
+  if (iteration != null) {
+    iterLabel = max != null ? ` #${iteration}/${max}` : ` #${iteration}`;
+    iterLabel = dim(iterLabel);
+  }
   const taskLabel = bold(task);
-  const iterLabel = iterPart ? dim(iterPart) : "";
+  const modelLabel = model ? dim(` (${model})`) : "";
   const dash = dim("───");
-  return `${dash} ${stepLabel} ${taskLabel}${iterLabel} ${dash}`;
+  return `${dash} ${stepLabel}${iterLabel} - ${taskLabel}${modelLabel} ${dash}`;
 }
 
 export function formatDuration(ms: number): string {
