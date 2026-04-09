@@ -8,14 +8,11 @@ Loop is a meta harness for Claude Code and co. It allows defining workflows and 
 - `@mariozechner/pi-tui` for TUI rendering
 
 ## Code Quality
-- **Linting/formatting**: Biome (`bun run check` to verify, `bun run check:fix` to auto-fix)
-- **Dead code detection**: Knip (`bun run knip`)
-- **Type checking**: `bun run typecheck`
-- **Tests**: `bun test` (co-located `.spec.ts` files)
+- **All checks**: `bun run check` (runs biome with auto-fix, typecheck, tests, knip — context-optimized, only shows output on failure)
 
-Before committing, run all checks:
+Before committing, run:
 ```bash
-bun test && bun run check && bun run typecheck
+bun run check
 ```
 
 ## Commits

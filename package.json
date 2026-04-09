@@ -15,7 +15,11 @@
   "scripts": {
     "build": "bun build src/cli.ts --outdir dist --outfile dist/cli.js --target node && bun build src/index.ts --outdir dist --target node && chmod +x dist/cli.js",
     "test": "bun test",
-    "check": "biome check --write --unsafe .",
+    "check": "sh scripts/check.sh",
+    "check:biome": "biome check --write --unsafe . --error-on-warnings --max-diagnostics=50",
+    "check:types": "tsc --noEmit --pretty",
+    "check:test": "bun test --reporter=dots --bail",
+    "check:knip": "knip --no-config-hints",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "knip": "knip",
