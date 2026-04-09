@@ -76,19 +76,33 @@ async function main(): Promise<void> {
 
   checkSandbox();
 
-  const adapter = createClaudeAdapter({ interactive: true });
   const sessionDir = createSessionDir(process.cwd());
   const logger = createLogger(sessionDir);
+  const adapter = createClaudeAdapter({ interactive: true, logger });
+
+  logger.info("Session initialized", { source: "loop", type: "session_init", sessionDir });
+  logger.info("Config parsed", {
+    source: "loop",
+    type: "config_parsed",
+    stepCount: config.steps.length,
+    commandType: config.command,
+  });
+  logger.debug("Claude adapter created", {
+    source: "loop",
+    type: "adapter_created",
+    interactive: true,
+  });
 
   let runner: ReturnType<typeof createRunner>;
 
   const tui = createLoopTUI({
     onUserMessage: (message) => {
-      logger.event({ source: "loop", type: "user_message", message });
+      logger.info("User message received", { source: "loop", type: "user_message", message });
       runner.sendMessage(message);
       tui.showUserMessage(message);
     },
     onInterrupt: () => {
+      logger.warn("User interrupt received", { source: "loop", type: "interrupt" });
       tui.stop();
       runner.abort();
       process.exit(130);
@@ -96,6 +110,7 @@ async function main(): Promise<void> {
   });
 
   tui.start();
+  logger.debug("TUI initialized", { source: "loop", type: "tui_started" });
 
   // Ensure the terminal is always restored, even on unexpected exits.
   process.on("exit", () => tui.stop());
@@ -106,7 +121,7 @@ async function main(): Promise<void> {
     logger,
     onEvent: (event, stepIndex) => {
       tui.handleEvent(event, stepIndex);
-      logger.event({ source: "agent", stepIndex, ...event });
+      logger.debug("Agent event", { source: "agent", stepIndex, eventType: event.type });
       const state = runner.getState();
       tui.updateStatus({
         step: stepIndex + 1,
@@ -117,14 +132,6 @@ async function main(): Promise<void> {
     onStepStart: (stepIndex, step, iteration) => {
       const task = step.type === "task" ? step.task : step.tasks.join(", ");
       const isLoop = step.until != null || (step.repeat != null && step.repeat > 1);
-      logger.event({
-        source: "loop",
-        type: "step_start",
-        stepIndex,
-        task,
-        iteration,
-        step,
-      });
       tui.showStepHeader(
         stepIndex + 1,
         config.steps.length,
@@ -141,17 +148,6 @@ async function main(): Promise<void> {
       });
     },
     onStepComplete: (stepIndex, result) => {
-      logger.event({
-        source: "loop",
-        type: "step_complete",
-        stepIndex,
-        exitReason: result.exitReason,
-        iterations: result.iterations,
-        costUsd: result.costUsd,
-        durationMs: result.durationMs,
-        usage: result.usage,
-        error: result.error,
-      });
       if (result.exitReason !== "error") {
         tui.showCompletion(
           result.exitReason,
@@ -173,18 +169,16 @@ async function main(): Promise<void> {
     const result = await runner.run();
     if (!result.success) {
       const failedStep = result.stepResults.find((s) => s.exitReason === "error");
+      logger.warn("Run finished with failure", {
+        source: "loop",
+        type: "run_failure",
+        failedStepError: failedStep?.error,
+        failedStepExitReason: failedStep?.exitReason,
+      });
       if (failedStep?.error) {
         tui.handleEvent({ type: "error", message: failedStep.error }, 0);
       }
     }
-    logger.event({
-      source: "loop",
-      type: "run_complete",
-      success: result.success,
-      totalCostUsd: result.totalCostUsd,
-      totalDurationMs: result.totalDurationMs,
-      totalUsage: result.totalUsage,
-    });
     tui.showRunSummary({
       totalCostUsd: result.totalCostUsd,
       totalDurationMs: result.totalDurationMs,
@@ -192,6 +186,7 @@ async function main(): Promise<void> {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    logger.error("Run error", { source: "loop", type: "run_error", error: message });
     tui.handleEvent({ type: "error", message }, 0);
   }
 

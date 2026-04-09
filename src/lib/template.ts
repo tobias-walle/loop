@@ -101,11 +101,14 @@ export function renderTemplate(template: string, context: TemplateContext): stri
  * Load the LOOP.md template from the project root, falling back to the
  * built-in default shipped with the package.
  */
-export function loadTemplate(projectRoot: string): string {
+export function loadTemplate(projectRoot: string): {
+  template: string;
+  source: "user" | "default";
+} {
   const userTemplate = path.join(projectRoot, "LOOP.md");
   try {
-    return fs.readFileSync(userTemplate, "utf-8");
+    return { template: fs.readFileSync(userTemplate, "utf-8"), source: "user" };
   } catch {
-    return DEFAULT_TEMPLATE;
+    return { template: DEFAULT_TEMPLATE, source: "default" };
   }
 }

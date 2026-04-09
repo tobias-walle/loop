@@ -27,6 +27,6 @@ export { createLoopTUI } from "./tui/loop-tui.js";
 export type { LoopTUI, LoopTUIOptions } from "./tui/loop-tui.js";
 export { isSandboxed } from "./lib/sandbox.js";
 export { createSessionDir } from "./lib/session.js";
-export { createLogger } from "./lib/logging.js";
+export { createLogger, noopLogger } from "./lib/logging.js";
 export type { Logger } from "./lib/logging.js";
 export { extractExitMarker } from "./lib/exit-marker.js";

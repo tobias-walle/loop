@@ -31,6 +31,12 @@ bun test && bun run check && bun run typecheck
 
 Key design principle: The runner and TUI never import agent-specific code. Everything goes through the `AgentAdapter` interface.
 
+## Session Logging
+
+Each run creates a session directory at `.loop/sessions/<date>-<hash>/` containing a `session.jsonl` file. This is a structured JSONL log with full debug coverage of the run lifecycle.
+
+Each line is a JSON object with at least `timestamp`, `level` (`debug`|`info`|`warn`|`error`), and `message`, plus arbitrary structured data fields. Covers: config parsing, template loading, step/iteration lifecycle, agent events, tool calls, retries, rate limits, abort handling, and run summaries.
+
 ## CLI Usage
 
 ```bash

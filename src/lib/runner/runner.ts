@@ -1,5 +1,5 @@
 import type { AgentAdapter, AgentEvent, AgentSession } from "../../agents/types.js";
-import type { Logger } from "../logging.js";
+import { type Logger, noopLogger } from "../logging.js";
 import type { PipelineState, RunResult, Step, StepResult } from "../types.js";
 import { emptyUsage } from "./prompt-builder.js";
 import { executeStep } from "./step-executor.js";
@@ -20,14 +20,6 @@ export interface Runner {
   sendMessage(text: string): void;
 }
 
-const noopLogger: Logger = {
-  info() {},
-  debug() {},
-  warn() {},
-  error() {},
-  event() {},
-};
-
 export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
   const projectRoot = opts.projectRoot ?? process.cwd();
   const logger = opts.logger ?? noopLogger;
@@ -45,17 +37,35 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
     usage: emptyUsage(),
   };
 
+  logger.info("Runner created", {
+    stepCount: steps.length,
+    projectRoot,
+  });
+
   return {
     async run(): Promise<RunResult> {
       const stepResults: StepResult[] = [];
       let previousSummary: string | undefined;
 
+      logger.info("Run started", { totalSteps: steps.length });
+
       for (let i = 0; i < steps.length; i++) {
         if (aborted) {
-          appendSkipped(stepResults, steps, i, "Skipped due to abort");
+          appendSkipped(stepResults, steps, i, "Skipped due to abort", logger);
           break;
         }
 
+        const step = steps[i];
+        logger.info("Step execution starting", {
+          stepIndex: i,
+          stepType: step.type,
+          ...(step.type === "task" ? { task: step.task } : { tasks: step.tasks }),
+          ...(step.until != null ? { until: step.until } : {}),
+          ...(step.repeat != null ? { repeat: step.repeat } : {}),
+          ...(step.max != null ? { max: step.max } : {}),
+        });
+
+        const stepStart = Date.now();
         const result = await executeStep(
           {
             agent: opts.agent,
@@ -65,7 +75,6 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
             state,
             pendingMessages,
             isAborted: () => aborted,
-            getCurrentSession: () => currentSession,
             setCurrentSession: (s) => {
               currentSession = s;
             },
@@ -74,13 +83,26 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
             onStepComplete: opts.onStepComplete,
           },
           i,
-          steps[i],
+          step,
           previousSummary,
         );
         stepResults.push(result);
 
+        logger.info("Step execution completed", {
+          stepIndex: i,
+          exitReason: result.exitReason,
+          costUsd: result.costUsd,
+          durationMs: Date.now() - stepStart,
+          iterations: result.iterations,
+        });
+
         if (result.exitReason === "error") {
-          appendSkipped(stepResults, steps, i + 1, "Skipped due to previous error");
+          logger.warn("Step errored, skipping remaining steps", {
+            stepIndex: i,
+            error: result.error ?? "unknown error",
+            remainingSteps: steps.length - i - 1,
+          });
+          appendSkipped(stepResults, steps, i + 1, "Skipped due to previous error", logger);
           break;
         }
 
@@ -100,6 +122,14 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
       );
       const success = stepResults.every((r) => r.exitReason !== "error");
 
+      logger.info("Run complete", {
+        success,
+        totalCostUsd: totalCost,
+        totalDurationMs: totalDuration,
+        totalUsage,
+        stepCount: stepResults.length,
+      });
+
       return {
         success,
         totalCostUsd: totalCost,
@@ -110,14 +140,22 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
     },
 
     abort(): void {
+      logger.warn("Abort called", { hadActiveSession: currentSession != null });
       aborted = true;
       currentSession?.abort();
     },
 
     sendMessage(text: string): void {
       if (currentSession) {
+        logger.debug("Message sent to active session", {
+          textLength: text.length,
+        });
         currentSession.sendMessage(text);
       } else {
+        logger.debug("Message queued (no active session)", {
+          textLength: text.length,
+          queueSize: pendingMessages.length + 1,
+        });
         pendingMessages.push(text);
       }
     },
@@ -133,8 +171,10 @@ function appendSkipped(
   steps: Step[],
   fromIndex: number,
   error: string,
+  logger: Logger,
 ): void {
   for (let j = fromIndex; j < steps.length; j++) {
+    logger.warn("Step skipped", { stepIndex: j, reason: error });
     results.push({
       step: steps[j],
       iterations: 0,

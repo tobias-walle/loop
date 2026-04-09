@@ -1,57 +1,62 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-export interface Logger {
-  info(message: string, data?: Record<string, unknown>): void;
-  debug(message: string, data?: Record<string, unknown>): void;
-  warn(message: string, data?: Record<string, unknown>): void;
-  error(message: string, data?: Record<string, unknown>): void;
-  event(entry: Record<string, unknown>): void;
+export type LogLevel = "debug" | "info" | "warn" | "error";
+
+export interface LogEntry {
+  timestamp: string;
+  level: LogLevel;
+  message: string;
+  [key: string]: unknown;
 }
 
-function appendToLog(logPath: string, line: string): void {
+export interface Logger {
+  debug(message: string, data?: Record<string, unknown>): void;
+  info(message: string, data?: Record<string, unknown>): void;
+  warn(message: string, data?: Record<string, unknown>): void;
+  error(message: string, data?: Record<string, unknown>): void;
+}
+
+function appendJsonLine(logPath: string, entry: LogEntry): void {
   try {
-    fs.appendFileSync(logPath, `${line}\n`);
+    fs.appendFileSync(logPath, `${JSON.stringify(entry)}\n`);
   } catch {
     try {
       fs.mkdirSync(path.dirname(logPath), { recursive: true });
-      fs.appendFileSync(logPath, `${line}\n`);
+      fs.appendFileSync(logPath, `${JSON.stringify(entry)}\n`);
     } catch {
       // Silently ignore log failures (e.g. in tests with temp paths)
     }
   }
 }
 
-export function createLogger(sessionDir: string): Logger {
-  const logPath = path.join(sessionDir, "loop.log");
-  const eventPath = path.join(sessionDir, "messages.jsonl");
+export const noopLogger: Logger = { debug() {}, info() {}, warn() {}, error() {} };
 
-  function log(level: string, message: string, data?: Record<string, unknown>): void {
-    const timestamp = new Date().toISOString();
-    const suffix = data ? ` ${JSON.stringify(data)}` : "";
-    appendToLog(logPath, `[${timestamp}] ${level}: ${message}${suffix}`);
+export function createLogger(sessionDir: string): Logger {
+  const logPath = path.join(sessionDir, "session.jsonl");
+
+  function log(level: LogLevel, message: string, data?: Record<string, unknown>): void {
+    const entry: LogEntry = {
+      ...data,
+      timestamp: new Date().toISOString(),
+      level,
+      message,
+    };
+    appendJsonLine(logPath, entry);
   }
 
   return {
-    info(message, data) {
-      log("INFO", message, data);
-    },
     debug(message, data) {
-      log("DEBUG", message, data);
+      log("debug", message, data);
+    },
+    info(message, data) {
+      log("info", message, data);
     },
     warn(message, data) {
-      log("WARN", message, data);
+      log("warn", message, data);
     },
     error(message, data) {
-      log("ERROR", message, data);
-    },
-    event(entry) {
-      const line = { timestamp: new Date().toISOString(), ...entry };
-      try {
-        fs.appendFileSync(eventPath, `${JSON.stringify(line)}\n`);
-      } catch {
-        // Silently ignore write failures
-      }
+      log("error", message, data);
     },
   };
 }

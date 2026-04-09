@@ -1,13 +1,16 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { type Logger, noopLogger } from "../../lib/logging.js";
 import type { AgentAdapter, AgentSession, AgentSpawnOptions } from "../types.js";
 import { generateInteractiveEvents, streamEvents } from "./stream.js";
 
 export interface ClaudeAdapterOptions {
   interactive?: boolean;
+  logger?: Logger;
 }
 
 export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapter {
   const interactive = options?.interactive ?? false;
+  const logger = options?.logger ?? noopLogger;
 
   return {
     spawn(prompt: string, opts?: AgentSpawnOptions): AgentSession {
@@ -23,10 +26,30 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
         ? [...baseArgs, "--input-format", "stream-json"]
         : ["--print", ...baseArgs, prompt];
 
+      logger.debug("Spawning claude process", {
+        interactive,
+        cwd: opts?.cwd,
+        argCount: args.length,
+      });
+
       const proc: ChildProcess = spawn("claude", args, {
         stdio: ["pipe", "pipe", "pipe"],
         cwd: opts?.cwd,
         env: opts?.env ? { ...process.env, ...opts.env } : undefined,
+      });
+
+      const pid = proc.pid;
+      if (pid == null) {
+        logger.warn("Claude process spawned without PID (spawn may have failed)", { interactive });
+      } else {
+        logger.info("Claude process spawned", { pid, interactive });
+      }
+
+      proc.on("error", (err) => {
+        logger.error("Claude process error", { pid, error: err.message });
+      });
+      proc.on("exit", (code, signal) => {
+        logger.debug("Claude process exited", { pid, code, signal });
       });
 
       if (interactive) {
@@ -35,6 +58,7 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
           message: { role: "user", content: prompt },
         });
         proc.stdin?.write(`${initMessage}\n`);
+        logger.debug("Sent initial prompt via stdin", { pid, promptLength: prompt.length });
       }
 
       const sentMessages: string[] = [];
@@ -46,24 +70,34 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
         });
         proc.stdin?.write(`${msg}\n`);
         sentMessages.push(text);
+        logger.debug("Sent user message via stdin", { pid, textLength: text.length });
       }
 
       const events =
         interactive && proc.stdout
-          ? wrapTerminateOnEnd(generateInteractiveEvents(proc.stdout, sentMessages), proc)
+          ? wrapTerminateOnEnd(
+              generateInteractiveEvents(proc.stdout, sentMessages),
+              proc,
+              logger,
+              pid,
+            )
           : proc.stdout
-            ? wrapTerminateOnEnd(streamEvents(proc.stdout), proc)
+            ? wrapTerminateOnEnd(streamEvents(proc.stdout), proc, logger, pid)
             : emptyEvents();
 
       return {
         events,
 
         sendMessage(text: string): void {
-          if (!interactive) return;
+          if (!interactive) {
+            logger.debug("sendMessage ignored (non-interactive mode)", { pid });
+            return;
+          }
           writeUserMessage(text);
         },
 
         abort(): void {
+          logger.warn("Aborting claude process", { pid });
           proc.kill("SIGTERM");
         },
       };
@@ -74,10 +108,13 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
 async function* wrapTerminateOnEnd(
   source: AsyncGenerator<import("../types.js").AgentEvent>,
   proc: ChildProcess,
+  logger: Logger,
+  pid: number | undefined,
 ): AsyncGenerator<import("../types.js").AgentEvent> {
   for await (const event of source) {
     yield event;
     if (event.type === "done" || event.type === "error") {
+      logger.debug("Terminating claude process after event", { pid, eventType: event.type });
       proc.stdin?.end();
       proc.kill("SIGTERM");
       return;

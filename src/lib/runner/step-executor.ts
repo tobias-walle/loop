@@ -2,7 +2,8 @@ import type { AgentAdapter, AgentEvent, AgentSession } from "../../agents/types.
 import { extractExitMarker } from "../exit-marker.js";
 import type { Logger } from "../logging.js";
 import { loadTemplate } from "../template.js";
-import type { PipelineState, Step, StepResult, TokenUsage } from "../types.js";
+import type { PipelineState, Step, StepResult } from "../types.js";
+import { processAgentEvents } from "./event-processor.js";
 import { addUsage, buildPrompt, emptyUsage } from "./prompt-builder.js";
 
 export interface StepExecutorContext {
@@ -13,7 +14,6 @@ export interface StepExecutorContext {
   state: PipelineState;
   pendingMessages: string[];
   isAborted: () => boolean;
-  getCurrentSession: () => AgentSession | null;
   setCurrentSession: (session: AgentSession | null) => void;
   onEvent?: (event: AgentEvent, stepIndex: number) => void;
   onStepStart?: (stepIndex: number, step: Step, iteration: number) => void;
@@ -35,11 +35,21 @@ export async function executeStep(
   let exitReason: StepResult["exitReason"] = "done";
   let errorMsg: string | undefined;
 
-  const template = loadTemplate(ctx.projectRoot);
+  const { template, source: templateSource } = loadTemplate(ctx.projectRoot);
+  ctx.logger.debug("Template loaded", { templateSource, projectRoot: ctx.projectRoot });
+
   const maxIterations = step.until ? (step.max ?? Number.POSITIVE_INFINITY) : (step.repeat ?? 1);
+  ctx.logger.debug("Computed maxIterations", {
+    maxIterations: maxIterations === Number.POSITIVE_INFINITY ? "Infinity" : maxIterations,
+    mode: step.until ? "until" : "repeat",
+    until: step.until,
+    repeat: step.repeat,
+    max: step.max,
+  });
 
   while (true) {
     if (ctx.isAborted()) {
+      ctx.logger.warn("Abort detected before iteration start", { stepIndex, iteration });
       exitReason = "error";
       errorMsg = "Aborted";
       break;
@@ -62,11 +72,19 @@ export async function executeStep(
       previousIterationSummary,
     );
 
+    ctx.logger.debug("Prompt built", { promptLength: prompt.length, stepIndex, iteration });
+
     const session = ctx.agent.spawn(prompt, { cwd: ctx.projectRoot });
     ctx.setCurrentSession(session);
     ctx.logger.info(`${stepLabel} - agent spawned`);
 
-    // Deliver any messages queued before the session started
+    if (ctx.pendingMessages.length > 0) {
+      ctx.logger.debug("Delivering pending messages", {
+        count: ctx.pendingMessages.length,
+        stepIndex,
+        iteration,
+      });
+    }
     for (const msg of ctx.pendingMessages) {
       session.sendMessage(msg);
     }
@@ -92,6 +110,7 @@ export async function executeStep(
     }
 
     if (ctx.isAborted()) {
+      ctx.logger.warn("Abort detected after iteration", { stepIndex, iteration });
       exitReason = "error";
       errorMsg = "Aborted";
       break;
@@ -128,67 +147,6 @@ export async function executeStep(
   return stepResult;
 }
 
-interface IterationResult {
-  result: string;
-  cost: number;
-  duration: number;
-  usage: TokenUsage;
-  hadError: boolean;
-  errorMsg?: string;
-}
-
-async function processAgentEvents(
-  ctx: StepExecutorContext,
-  session: AgentSession,
-  stepIndex: number,
-  stepLabel: string,
-): Promise<IterationResult> {
-  let result = "";
-  let cost = 0;
-  let duration = 0;
-  let usage = emptyUsage();
-  let hadError = false;
-  let errorMsg: string | undefined;
-  let eventCount = 0;
-
-  for await (const event of session.events) {
-    eventCount++;
-    if (ctx.isAborted()) break;
-
-    ctx.onEvent?.(event, stepIndex);
-
-    if (event.type === "done") {
-      result = event.result;
-      cost = event.costUsd;
-      duration = event.durationMs;
-      usage = {
-        inputTokens: event.usage.inputTokens,
-        outputTokens: event.usage.outputTokens,
-        cacheCreationTokens: event.usage.cacheCreationTokens ?? 0,
-        cacheReadTokens: event.usage.cacheReadTokens ?? 0,
-      };
-      ctx.logger.info(`${stepLabel} - done (cost=$${cost.toFixed(4)}, ${eventCount} events)`);
-    } else if (event.type === "error") {
-      hadError = true;
-      errorMsg = event.message;
-      result = "";
-      ctx.logger.error(`${stepLabel} - agent error: ${event.message}`);
-    } else if (event.type === "unknown") {
-      ctx.logger.warn(
-        `${stepLabel} - unknown event "${event.eventType}": ${JSON.stringify(event.raw)}`,
-      );
-    } else if (event.type === "session_start") {
-      ctx.logger.info(`${stepLabel} - session started (model=${event.model})`);
-    }
-  }
-
-  if (eventCount === 0) {
-    ctx.logger.warn(`${stepLabel} - WARNING: agent produced no events`);
-  }
-
-  return { result, cost, duration, usage, hadError, errorMsg };
-}
-
 interface LoopEvaluation {
   exitReason: StepResult["exitReason"];
   shouldBreak: boolean;
@@ -206,6 +164,7 @@ function evaluateLoopExit(
 ): LoopEvaluation {
   if (step.until) {
     const marker = extractExitMarker(result);
+    logger.debug("Exit marker extracted", { markerType: marker.type, stepIndex, iteration });
     if (marker.type === "loop_done") {
       logger.info(`Step ${stepIndex + 1}/${totalSteps} - iteration ${iteration} - LOOP_DONE`);
       return { exitReason: "loop_done", shouldBreak: true };
@@ -218,6 +177,11 @@ function evaluateLoopExit(
       return { exitReason: "max_reached", shouldBreak: true };
     }
 
+    logger.debug("Continuing loop (until mode)", {
+      iteration,
+      summaryLength: summary?.length ?? 0,
+      resultLength: result.length,
+    });
     return { exitReason: "done", shouldBreak: false, previousIterationSummary: summary };
   }
 
@@ -226,6 +190,10 @@ function evaluateLoopExit(
       logger.info(`Step ${stepIndex + 1}/${totalSteps} - iteration ${iteration} - repeat complete`);
       return { exitReason: "done", shouldBreak: true };
     }
+    logger.debug("Continuing loop (repeat mode)", {
+      iteration,
+      resultLength: result.length,
+    });
     return {
       exitReason: "done",
       shouldBreak: false,

@@ -204,15 +204,17 @@ describe("loadTemplate", () => {
     fs.writeFileSync(path.join(tmpDir, "LOOP.md"), customTemplate);
 
     const result = loadTemplate(tmpDir);
-    expect(result).toBe(customTemplate);
+    expect(result.template).toBe(customTemplate);
+    expect(result.source).toBe("user");
   });
 
   test("falls back to built-in default when LOOP.md is missing", () => {
     const result = loadTemplate(tmpDir);
-    expect(result).toContain("# Loop Context");
-    expect(result).toContain("{{task}}");
-    expect(result).toContain("{{#if until}}");
-    expect(result).toContain("LOOP_DONE");
+    expect(result.template).toContain("# Loop Context");
+    expect(result.template).toContain("{{task}}");
+    expect(result.template).toContain("{{#if until}}");
+    expect(result.template).toContain("LOOP_DONE");
+    expect(result.source).toBe("default");
   });
 });
 
@@ -221,7 +223,7 @@ describe("default template", () => {
 
   beforeEach(() => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-default-"));
-    defaultTemplate = loadTemplate(tmpDir);
+    defaultTemplate = loadTemplate(tmpDir).template;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
