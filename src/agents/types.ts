@@ -31,6 +31,7 @@ export type AgentEvent =
       model?: string;
       totalTokens?: number;
     }
+  | { type: "user_message"; text: string }
   | { type: "unknown"; eventType: string; raw: unknown };
 
 export type TokenUsage = {

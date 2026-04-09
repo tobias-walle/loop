@@ -235,6 +235,13 @@ export function createEventRouter(
         break;
       }
 
+      case "user_message": {
+        const container = currentContainer();
+        container.addChild(new Text(formatUserMessage(event.text), 0, 0));
+        requestRender();
+        break;
+      }
+
       case "task_done": {
         const mapped = state.toolIdToContainer.get(event.toolUseId);
         const parent = (() => {
@@ -324,9 +331,12 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
   // Content container holds all event output.
   // StatusBar sits below it as a sibling - no overlay, so no screen-filling padding.
   const content = new Container();
+  const pendingMessagesContainer = new Container();
+  const pendingMessageNodes = new Map<string, Text>();
   const statusBar = new StatusBar();
 
   tui.addChild(content);
+  tui.addChild(pendingMessagesContainer);
   tui.addChild(statusBar);
 
   statusBar.onSubmit = (message: string) => {
@@ -364,10 +374,20 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
         clearInterval(statusInterval);
         statusInterval = null;
       }
+      // Hide the status bar and do a final render so it doesn't linger on screen.
+      statusBar.hide();
+      (tui as unknown as { doRender(): void }).doRender();
       tui.stop();
     },
 
     handleEvent(event: AgentEvent, stepIndex: number): void {
+      if (event.type === "user_message") {
+        const node = pendingMessageNodes.get(event.text);
+        if (node) {
+          pendingMessagesContainer.removeChild(node);
+          pendingMessageNodes.delete(event.text);
+        }
+      }
       router.handleEvent(event, stepIndex);
     },
 
@@ -396,7 +416,10 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
     },
 
     showUserMessage(text: string): void {
-      router.showUserMessage(text);
+      const node = new Text(dim(formatUserMessage(text)), 0, 0);
+      pendingMessagesContainer.addChild(node);
+      pendingMessageNodes.set(text, node);
+      tui.requestRender();
     },
 
     updateStatus(info: {

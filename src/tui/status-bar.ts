@@ -24,8 +24,8 @@ export class StatusBar implements Component, Focusable {
   private inputValue = "";
   private cursorPos = 0;
   private status: StatusInfo = {};
-  private queued = false;
   private startTime: number | null = null;
+  private hidden = false;
 
   setStatus(info: StatusInfo): void {
     this.status = info;
@@ -35,8 +35,8 @@ export class StatusBar implements Component, Focusable {
     this.startTime = time;
   }
 
-  setQueued(queued: boolean): void {
-    this.queued = queued;
+  hide(): void {
+    this.hidden = true;
   }
 
   getInputValue(): string {
@@ -48,6 +48,7 @@ export class StatusBar implements Component, Focusable {
   }
 
   render(width: number): string[] {
+    if (this.hidden) return [];
     const sep = dimGray("─".repeat(width));
     const inputLine = this.buildInputLine(width);
     const footerLine = this.buildFooterLine(width);
@@ -90,10 +91,6 @@ export class StatusBar implements Component, Focusable {
     const durationMs = this.startTime != null ? Date.now() - this.startTime : s.durationMs;
     if (durationMs != null) {
       parts.push(dim(formatDuration(durationMs)));
-    }
-
-    if (this.queued) {
-      parts.push(yellow("(queued)"));
     }
 
     const sep = dim(" \u00b7 ");

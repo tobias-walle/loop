@@ -482,7 +482,6 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
   return {
     spawn(prompt: string, opts?: AgentSpawnOptions): AgentSession {
       const baseArgs = [
-        "--print",
         "--verbose",
         "--dangerously-skip-permissions",
         "--output-format",
@@ -492,7 +491,7 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
 
       const args = interactive
         ? [...baseArgs, "--input-format", "stream-json"]
-        : [...baseArgs, prompt];
+        : ["--print", ...baseArgs, prompt];
 
       const proc: ChildProcess = spawn("claude", args, {
         stdio: ["pipe", "pipe", "pipe"],
@@ -508,14 +507,70 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
         proc.stdin?.write(`${initMessage}\n`);
       }
 
+      // Queue of user message texts written to stdin but not yet processed
+      // by Claude. Used to emit user_message events at the right time and
+      // to keep the session alive when "done" arrives before Claude reads them.
+      const sentMessages: string[] = [];
+
+      function writeUserMessage(text: string): void {
+        const msg = JSON.stringify({
+          type: "user",
+          message: { role: "user", content: text },
+        });
+        proc.stdin?.write(`${msg}\n`);
+        sentMessages.push(text);
+      }
+
       async function* generateEvents(): AsyncGenerator<AgentEvent> {
         if (!proc.stdout) return;
-        for await (const event of streamEvents(proc.stdout)) {
-          yield event;
-          if (event.type === "done" || event.type === "error") {
-            proc.stdin?.end();
-            proc.kill("SIGTERM");
-            return;
+
+        const blocksByIndex = new Map<number, BlockState>();
+        const parentToolUseIdByIndex = new Map<number, string | null>();
+        const toolIdToParent = new Map<string, string | null>();
+        const taskModelByToolUseId = new Map<string, string>();
+
+        for await (const line of readLines(proc.stdout)) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          // Detect top-level message_start → Claude is processing our input.
+          // Emit user_message events so the TUI renders them at the right spot.
+          if (sentMessages.length > 0) {
+            try {
+              const raw = JSON.parse(trimmed);
+              if (
+                raw.type === "stream_event" &&
+                raw.event?.type === "message_start" &&
+                raw.parent_tool_use_id == null
+              ) {
+                for (const text of sentMessages) {
+                  yield { type: "user_message", text };
+                }
+                sentMessages.length = 0;
+              }
+            } catch {
+              // Ignore parse errors during detection
+            }
+          }
+
+          const events = parseClaudeLine(
+            trimmed,
+            blocksByIndex,
+            parentToolUseIdByIndex,
+            toolIdToParent,
+            taskModelByToolUseId,
+          );
+          for (const event of events) {
+            // If session would end but we have unprocessed input, keep it alive
+            if (event.type === "done" && sentMessages.length > 0) {
+              continue;
+            }
+            yield event;
+            if (event.type === "done" || event.type === "error") {
+              proc.stdin?.end();
+              proc.kill("SIGTERM");
+              return;
+            }
           }
         }
       }
@@ -525,11 +580,7 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
 
         sendMessage(text: string): void {
           if (!interactive) return;
-          const msg = JSON.stringify({
-            type: "user",
-            message: { role: "user", content: text },
-          });
-          proc.stdin?.write(`${msg}\n`);
+          writeUserMessage(text);
         },
 
         abort(): void {

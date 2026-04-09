@@ -151,13 +151,11 @@ describe("StatusBar", () => {
     });
   });
 
-  describe("queued display", () => {
-    it("shows queued indicator in footer", () => {
+  describe("hide", () => {
+    it("returns empty lines when hidden", () => {
       const bar = new StatusBar();
-      bar.focused = true;
-      bar.setQueued(true);
-      const [, , , , footer] = renderPlain(bar);
-      expect(footer).toContain("(queued)");
+      bar.hide();
+      expect(bar.render(80)).toEqual([]);
     });
   });
 

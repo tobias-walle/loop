@@ -130,7 +130,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const adapter = createClaudeAdapter();
+  const adapter = createClaudeAdapter({ interactive: true });
   const sessionDir = createSessionDir(process.cwd());
   const log = createSessionLogger(sessionDir);
 
