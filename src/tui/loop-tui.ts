@@ -1,4 +1,4 @@
-import { Container, ProcessTerminal, TUI, Text, matchesKey } from "@mariozechner/pi-tui";
+import { Container, ProcessTerminal, TUI, Text } from "@mariozechner/pi-tui";
 import type { AgentEvent } from "../agents/types.js";
 import { dim } from "../lib/ansi.js";
 import type { RunSummary, TokenUsage } from "../lib/types.js";
@@ -61,6 +61,9 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
   statusBar.onSubmit = (message: string) => {
     opts?.onUserMessage?.(message);
   };
+  statusBar.onInterrupt = () => {
+    opts?.onInterrupt?.();
+  };
 
   const router = createEventRouter(content, () => tui.requestRender());
 
@@ -70,14 +73,6 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
       statusBar.setStartTime(startTime);
 
       tui.start();
-
-      tui.addInputListener((data) => {
-        if (matchesKey(data, "ctrl+c")) {
-          opts?.onInterrupt?.();
-          return { consume: true };
-        }
-        return undefined;
-      });
       tui.setFocus(statusBar);
 
       statusInterval = setInterval(() => {

@@ -3,20 +3,9 @@ export const ESC = "\x1b[";
 export const RESET = `${ESC}0m`;
 export const ITALIC = `${ESC}3m`;
 
-// Key input constants — escape sequences used for input detection
-export const KEY_ENTER = "\r";
-export const KEY_NEWLINE = "\n";
-export const KEY_ESCAPE = "\x1b";
-export const KEY_ESCAPE_DOUBLE = "\x1b\x1b";
-export const KEY_BACKSPACE = "\x7f";
-export const KEY_BACKSPACE_ALT = "\b";
-export const KEY_DELETE = "\x1b[3~";
-export const KEY_LEFT = "\x1b[D";
-export const KEY_RIGHT = "\x1b[C";
-export const KEY_HOME = "\x1b[H";
-export const KEY_END = "\x1b[F";
-export const KEY_CTRL_A = "\x01";
-export const KEY_CTRL_E = "\x05";
+// Bracketed paste mode markers
+export const PASTE_START = "\x1b[200~";
+export const PASTE_END = "\x1b[201~";
 
 export function wrap(code: string, text: string): string {
   return `${ESC}${code}m${text}${RESET}`;

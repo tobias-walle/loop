@@ -1,26 +1,7 @@
-import { CURSOR_MARKER, type Component, type Focusable, visibleWidth } from "@mariozechner/pi-tui";
-import {
-  KEY_BACKSPACE,
-  KEY_BACKSPACE_ALT,
-  KEY_CTRL_A,
-  KEY_CTRL_E,
-  KEY_DELETE,
-  KEY_END,
-  KEY_ENTER,
-  KEY_ESCAPE,
-  KEY_ESCAPE_DOUBLE,
-  KEY_HOME,
-  KEY_LEFT,
-  KEY_NEWLINE,
-  KEY_RIGHT,
-  cursorStyle,
-  cyan,
-  dim,
-  dimGray,
-  green,
-  yellow,
-} from "../../lib/ansi.js";
+import { type Component, type Focusable, truncateToWidth } from "@mariozechner/pi-tui";
+import { cyan, dim, dimGray, green, yellow } from "../../lib/ansi.js";
 import { formatDuration } from "../formatters.js";
+import { InputLine } from "./input-line.js";
 
 interface StatusInfo {
   step?: number;
@@ -34,18 +15,31 @@ interface StatusInfo {
 /**
  * Three-line bottom overlay:
  *   Line 1: separator (─── full width)
- *   Line 2: input field
+ *   Line 2: input field (delegated to InputLine)
  *   Line 3: separator + status footer
  */
 export class StatusBar implements Component, Focusable {
   focused = false;
-  onSubmit?: (message: string) => void;
 
-  private inputValue = "";
-  private cursorPos = 0;
+  readonly input = new InputLine();
+
   private status: StatusInfo = {};
   private startTime: number | null = null;
   private hidden = false;
+
+  get onSubmit(): ((message: string) => void) | undefined {
+    return this.input.onSubmit;
+  }
+  set onSubmit(fn: ((message: string) => void) | undefined) {
+    this.input.onSubmit = fn;
+  }
+
+  get onInterrupt(): (() => void) | undefined {
+    return this.input.onInterrupt;
+  }
+  set onInterrupt(fn: (() => void) | undefined) {
+    this.input.onInterrupt = fn;
+  }
 
   setStatus(info: StatusInfo): void {
     this.status = info;
@@ -60,7 +54,7 @@ export class StatusBar implements Component, Focusable {
   }
 
   getInputValue(): string {
-    return this.inputValue;
+    return this.input.getValue();
   }
 
   invalidate(): void {
@@ -69,25 +63,15 @@ export class StatusBar implements Component, Focusable {
 
   render(width: number): string[] {
     if (this.hidden) return [];
+    this.input.focused = this.focused;
     const sep = dimGray("─".repeat(width));
-    const inputLine = this.buildInputLine(width);
+    const inputLines = this.input.render(width);
     const footerLine = this.buildFooterLine(width);
-    return ["", sep, inputLine, sep, footerLine];
+    return ["", sep, ...inputLines, sep, footerLine];
   }
 
-  private buildInputLine(width: number): string {
-    if (this.focused) {
-      const before = this.inputValue.slice(0, this.cursorPos);
-      const after = this.inputValue.slice(this.cursorPos);
-      const cursor = cursorStyle();
-      const inputPart = `${before}${CURSOR_MARKER}${cursor}${after}`;
-      const contentWidth = visibleWidth(this.inputValue) + 1; // +1 for ▏
-      const pad = Math.max(0, width - contentWidth);
-      return `${inputPart}${" ".repeat(pad)}`;
-    }
-    const inputWidth = visibleWidth(this.inputValue);
-    const pad = Math.max(0, width - inputWidth);
-    return `${this.inputValue}${" ".repeat(pad)}`;
+  handleInput(data: string): void {
+    this.input.handleInput(data);
   }
 
   private buildFooterLine(width: number): string {
@@ -114,84 +98,6 @@ export class StatusBar implements Component, Focusable {
 
     const sep = dim(" \u00b7 ");
     const text = parts.length > 0 ? parts.join(sep) : "";
-    const textWidth = visibleWidth(text);
-    const pad = Math.max(0, width - textWidth);
-    return `${text}${" ".repeat(pad)}`;
-  }
-
-  private keyHandlers: ReadonlyMap<string, () => void> = new Map<string, () => void>([
-    [KEY_ENTER, () => this.submitInput()],
-    [KEY_NEWLINE, () => this.submitInput()],
-    [KEY_ESCAPE, () => this.clearInput()],
-    [KEY_ESCAPE_DOUBLE, () => this.clearInput()],
-    [KEY_BACKSPACE, () => this.deleteBack()],
-    [KEY_BACKSPACE_ALT, () => this.deleteBack()],
-    [KEY_DELETE, () => this.deleteForward()],
-    [KEY_LEFT, () => this.moveCursorLeft()],
-    [KEY_RIGHT, () => this.moveCursorRight()],
-    [KEY_HOME, () => this.moveCursorHome()],
-    [KEY_CTRL_A, () => this.moveCursorHome()],
-    [KEY_END, () => this.moveCursorEnd()],
-    [KEY_CTRL_E, () => this.moveCursorEnd()],
-  ]);
-
-  handleInput(data: string): void {
-    const handler = this.keyHandlers.get(data);
-    if (handler) {
-      handler();
-      return;
-    }
-
-    // Ignore other escape sequences
-    if (data.startsWith(KEY_ESCAPE)) return;
-
-    // Regular character input
-    this.inputValue =
-      this.inputValue.slice(0, this.cursorPos) + data + this.inputValue.slice(this.cursorPos);
-    this.cursorPos += data.length;
-  }
-
-  private submitInput(): void {
-    if (this.inputValue.length > 0 && this.onSubmit) {
-      this.onSubmit(this.inputValue);
-      this.inputValue = "";
-      this.cursorPos = 0;
-    }
-  }
-
-  private clearInput(): void {
-    this.inputValue = "";
-    this.cursorPos = 0;
-  }
-
-  private deleteBack(): void {
-    if (this.cursorPos > 0) {
-      this.inputValue =
-        this.inputValue.slice(0, this.cursorPos - 1) + this.inputValue.slice(this.cursorPos);
-      this.cursorPos--;
-    }
-  }
-
-  private deleteForward(): void {
-    if (this.cursorPos < this.inputValue.length) {
-      this.inputValue =
-        this.inputValue.slice(0, this.cursorPos) + this.inputValue.slice(this.cursorPos + 1);
-    }
-  }
-
-  private moveCursorLeft(): void {
-    if (this.cursorPos > 0) this.cursorPos--;
-  }
-
-  private moveCursorRight(): void {
-    if (this.cursorPos < this.inputValue.length) this.cursorPos++;
-  }
-
-  private moveCursorHome(): void {
-    this.cursorPos = 0;
-  }
-
-  private moveCursorEnd(): void {
-    this.cursorPos = this.inputValue.length;
+    return truncateToWidth(text, width, "", true);
   }
 }
