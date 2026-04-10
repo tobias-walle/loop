@@ -30,6 +30,83 @@ function generateToolId(): string {
   return `toolu_stub_${toolIdCounter}`;
 }
 
+/** Metadata for a subagent tool call, used for interleaved emission. */
+type SubagentInfo = {
+  toolId: string;
+  taskId: string;
+  call: ToolCall;
+  description: string;
+  innerEvents: AgentEvent[];
+};
+
+/**
+ * Emit events for parallel subagent tool calls in interleaved order,
+ * matching real Claude behavior: all tool_starts → all task_starteds →
+ * round-robin inner events → all task_dones → all tool_dones.
+ */
+function emitParallelSubagents(
+  agents: SubagentInfo[],
+  parentToolUseId: string | null,
+): AgentEvent[] {
+  const events: AgentEvent[] = [];
+
+  // Phase 1: all tool_starts
+  for (const a of agents) {
+    events.push({
+      type: "tool_start",
+      toolId: a.toolId,
+      tool: a.call.tool,
+      input: a.call.input,
+      parentToolUseId,
+    });
+  }
+
+  // Phase 2: all task_starteds
+  for (const a of agents) {
+    events.push({
+      type: "task_started",
+      taskId: a.taskId,
+      toolUseId: a.toolId,
+      description: a.description,
+      prompt: typeof a.call.input.prompt === "string" ? a.call.input.prompt : a.description,
+    });
+  }
+
+  // Phase 3: round-robin inner events
+  const maxLen = Math.max(...agents.map((a) => a.innerEvents.length));
+  for (let i = 0; i < maxLen; i++) {
+    for (const a of agents) {
+      if (i < a.innerEvents.length) {
+        events.push(a.innerEvents[i]);
+      }
+    }
+  }
+
+  // Phase 4: all task_dones
+  for (const a of agents) {
+    events.push({
+      type: "task_done",
+      taskId: a.taskId,
+      toolUseId: a.toolId,
+      status: "completed",
+      summary: a.description,
+      durationMs: a.call.subagentDurationMs ?? 0,
+    });
+  }
+
+  // Phase 5: all tool_dones
+  for (const a of agents) {
+    events.push({
+      type: "tool_done",
+      toolId: a.toolId,
+      result: a.call.result,
+      parentToolUseId,
+    });
+  }
+
+  return events;
+}
+
 function collectTurnEvents(turns: Turn[], parentToolUseId: string | null): AgentEvent[] {
   const events: AgentEvent[] = [];
 
@@ -48,19 +125,13 @@ function collectTurnEvents(turns: Turn[], parentToolUseId: string | null): Agent
     }
 
     if (turn.toolCalls) {
+      // Partition into subagent calls (parallel) and regular calls
+      const parallelSubagents: SubagentInfo[] = [];
+      const regularCalls: ToolCall[] = [];
+
       for (const call of turn.toolCalls) {
-        const toolId = generateToolId();
-
-        events.push({
-          type: "tool_start",
-          toolId,
-          tool: call.tool,
-          input: call.input,
-          parentToolUseId,
-        });
-
-        // Emit task lifecycle events for Agent/Task tool calls with subagent turns
         if (call.subagent) {
+          const toolId = generateToolId();
           const taskId = `task_stub_${toolIdCounter}`;
           const description =
             typeof call.input.description === "string"
@@ -68,33 +139,39 @@ function collectTurnEvents(turns: Turn[], parentToolUseId: string | null): Agent
               : typeof call.input.task === "string"
                 ? call.input.task
                 : call.tool;
-
-          events.push({
-            type: "task_started",
+          parallelSubagents.push({
+            toolId,
             taskId,
-            toolUseId: toolId,
+            call,
             description,
-            prompt: typeof call.input.prompt === "string" ? call.input.prompt : description,
+            innerEvents: collectTurnEvents(call.subagent, toolId),
           });
-
-          events.push(...collectTurnEvents(call.subagent, toolId));
-
-          events.push({
-            type: "task_done",
-            taskId,
-            toolUseId: toolId,
-            status: "completed",
-            summary: description,
-            durationMs: call.subagentDurationMs ?? 0,
-          });
+        } else {
+          regularCalls.push(call);
         }
+      }
 
+      // Emit regular tool calls sequentially
+      for (const call of regularCalls) {
+        const toolId = generateToolId();
+        events.push({
+          type: "tool_start",
+          toolId,
+          tool: call.tool,
+          input: call.input,
+          parentToolUseId,
+        });
         events.push({
           type: "tool_done",
           toolId,
           result: call.result,
           parentToolUseId,
         });
+      }
+
+      // Emit subagent calls interleaved (even if only one, same code path)
+      if (parallelSubagents.length > 0) {
+        events.push(...emitParallelSubagents(parallelSubagents, parentToolUseId));
       }
     }
   }

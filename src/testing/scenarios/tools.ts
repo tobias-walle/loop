@@ -68,6 +68,94 @@ export const MULTI_TOOL_TURN: Scenario = {
   duration: 5200,
 };
 
+/** Three parallel Agent calls with interleaved inner events. */
+export const PARALLEL_SUBAGENTS: Scenario = {
+  model: "claude-sonnet-4-20250514",
+  turns: [
+    {
+      text: "I'll run three reviews in parallel.",
+      toolCalls: [
+        {
+          tool: "Agent",
+          input: {
+            description: "Code reuse review",
+            prompt: "Review for code reuse opportunities",
+            model: "haiku",
+          },
+          result: "No reuse issues found.",
+          subagentDurationMs: 6000,
+          subagent: [
+            {
+              toolCalls: [
+                {
+                  tool: "Read",
+                  input: { file_path: "src/app.ts" },
+                  result: "file contents",
+                },
+              ],
+            },
+            { text: "No reuse issues found." },
+          ],
+        },
+        {
+          tool: "Agent",
+          input: {
+            description: "Code quality review",
+            prompt: "Review code quality",
+            model: "haiku",
+          },
+          result: "Quality looks good.",
+          subagentDurationMs: 7600,
+          subagent: [
+            {
+              toolCalls: [
+                {
+                  tool: "Read",
+                  input: { file_path: "src/utils.ts" },
+                  result: "file contents",
+                },
+                {
+                  tool: "Glob",
+                  input: { pattern: "*.test.ts" },
+                  result: "src/app.test.ts",
+                },
+              ],
+            },
+            { text: "Quality looks good." },
+          ],
+        },
+        {
+          tool: "Agent",
+          input: {
+            description: "Efficiency review",
+            prompt: "Review for performance issues",
+            model: "haiku",
+          },
+          result: "No performance issues.",
+          subagentDurationMs: 5500,
+          subagent: [
+            {
+              toolCalls: [
+                {
+                  tool: "Read",
+                  input: { file_path: "src/lib/runner.ts" },
+                  result: "file contents",
+                },
+              ],
+            },
+            { text: "No performance issues." },
+          ],
+        },
+      ],
+    },
+    {
+      text: "All three reviews are in. No issues found.",
+    },
+  ],
+  cost: 0.04,
+  duration: 15000,
+};
+
 /** Task tool with nested subagent turns. */
 export const NESTED_SUBAGENT: Scenario = {
   model: "claude-sonnet-4-20250514",

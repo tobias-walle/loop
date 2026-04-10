@@ -1,7 +1,7 @@
 import { type Component, Text } from "@mariozechner/pi-tui";
 import type { AgentEvent } from "../agents/types.js";
 import { dim } from "../lib/ansi.js";
-import { PipeBox } from "./components/pipe-box.js";
+import { PipeBox, nextAgentColor } from "./components/pipe-box.js";
 import { formatTokenCount, formatToolLine } from "./formatters.js";
 
 /** Any component that can hold children (Container, PipeBox, etc.) */
@@ -17,6 +17,7 @@ export type IndicatorNode = Component & { stop(): void; setText(t: string): void
 export interface LoopTUIState {
   containerStack: ChildContainer[];
   toolIdToContainer: Map<string, ChildContainer>;
+  toolIdToParentContainer: Map<string, ChildContainer>;
   textBlocks: Map<string, { textRef: Text; accumulated: string }>;
   thinkingIndicator: { node: IndicatorNode; parent: ChildContainer } | null;
 }
@@ -53,11 +54,12 @@ export function handleToolStart(
     const description = String(event.input?.description ?? "");
     const model = event.input?.model;
     const modelSuffix = typeof model === "string" && model ? ` (${model})` : "";
-    container.addChild(new Text(dim(`┌ ${event.tool}: ${description}${modelSuffix}`), 0, 0));
-    const subBox = new PipeBox();
+    const color = nextAgentColor();
+    const subBox = new PipeBox(color);
+    subBox.setHeader(dim(`${event.tool}: ${description}${modelSuffix}`));
     container.addChild(subBox);
-    state.containerStack.push(subBox);
     state.toolIdToContainer.set(event.toolId, subBox);
+    state.toolIdToParentContainer.set(event.toolId, container);
     requestRender();
     return;
   }
@@ -76,11 +78,12 @@ export function handleTaskStarted(
 ): void {
   if (!state.toolIdToContainer.has(event.toolUseId)) {
     const container = currentContainer();
-    container.addChild(new Text(dim(`┌ Agent: ${event.description}`), 0, 0));
-    const subBox = new PipeBox();
+    const color = nextAgentColor();
+    const subBox = new PipeBox(color);
+    subBox.setHeader(dim(`Agent: ${event.description}`));
     container.addChild(subBox);
-    state.containerStack.push(subBox);
     state.toolIdToContainer.set(event.toolUseId, subBox);
+    state.toolIdToParentContainer.set(event.toolUseId, container);
     requestRender();
   }
 }
@@ -92,21 +95,17 @@ export function handleTaskDone(
   currentContainer: () => ChildContainer,
 ): void {
   const mapped = state.toolIdToContainer.get(event.toolUseId);
-  const parent = (() => {
-    if (!mapped) return currentContainer();
-    const idx = state.containerStack.indexOf(mapped);
-    return idx > 0 ? state.containerStack[idx - 1] : currentContainer();
-  })();
-  if (mapped) {
-    const idx = state.containerStack.indexOf(mapped);
-    if (idx !== -1) {
-      state.containerStack.splice(idx, 1);
-    }
-    state.toolIdToContainer.delete(event.toolUseId);
-  }
+  const parent = state.toolIdToParentContainer.get(event.toolUseId) || currentContainer();
+  state.toolIdToContainer.delete(event.toolUseId);
+  state.toolIdToParentContainer.delete(event.toolUseId);
   const durationSec = (event.durationMs / 1000).toFixed(1);
   const meta: string[] = [`${durationSec}s`];
   if (event.totalTokens != null) meta.push(`${formatTokenCount(event.totalTokens)} tokens`);
-  parent.addChild(new Text(dim(`└ ${event.status}: ${event.summary} (${meta.join(" · ")})`), 0, 0));
+  const footerText = dim(`${event.status}: ${event.summary} (${meta.join(" · ")})`);
+  if (mapped instanceof PipeBox) {
+    mapped.setFooter(footerText);
+  } else {
+    parent.addChild(new Text(dim(`└ ${footerText}`), 0, 0));
+  }
   requestRender();
 }

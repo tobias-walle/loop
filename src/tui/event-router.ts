@@ -53,6 +53,7 @@ export function createEventRouter(
   const state: LoopTUIState = {
     containerStack: [root],
     toolIdToContainer: new Map(),
+    toolIdToParentContainer: new Map(),
     textBlocks: new Map(),
     thinkingIndicator: null,
   };
@@ -70,7 +71,7 @@ export function createEventRouter(
   }
 
   function containerForEvent(id: string | null): ChildContainer {
-    return (id !== null && state.toolIdToContainer.get(id)) || currentContainer();
+    return (id !== null && state.toolIdToContainer.get(id)) || state.containerStack[0];
   }
 
   let headerInfo: {
@@ -160,6 +161,7 @@ export function createEventRouter(
     const header = formatStepHeader(step, totalSteps, task, iteration, max, model);
     state.containerStack.length = 1;
     state.toolIdToContainer.clear();
+    state.toolIdToParentContainer.clear();
     state.textBlocks.clear();
     removeThinkingIndicator();
     root.addChild(new Spacer());
