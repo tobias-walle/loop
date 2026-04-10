@@ -5,6 +5,7 @@ import { PARALLEL_SUBAGENTS } from "../testing/scenarios/tools.js";
 import { createEventRouter } from "./app.js";
 import { PipeBox } from "./components/pipe-box.js";
 import { ThinkingIndicator } from "./components/thinking-indicator.js";
+import { ROOT_KEY } from "./event-handlers.js";
 
 function setup() {
   const root = new Container();
@@ -26,22 +27,22 @@ describe("createEventRouter", () => {
     router.handleEvent({ type: "text_delta", text: "Hello", parentToolUseId: null }, 0);
 
     expect(root.children).toHaveLength(1);
-    expect(router.state.textBlocks.get("__root__")?.accumulated).toBe("Hello");
+    expect(router.state.textBlocks.get(ROOT_KEY)?.accumulated).toBe("Hello");
 
     router.handleEvent({ type: "text_delta", text: " world", parentToolUseId: null }, 0);
 
     expect(root.children).toHaveLength(1);
-    expect(router.state.textBlocks.get("__root__")?.accumulated).toBe("Hello world");
+    expect(router.state.textBlocks.get(ROOT_KEY)?.accumulated).toBe("Hello world");
   });
 
   test("text_done clears the text reference", () => {
     const { router } = setup();
 
     router.handleEvent({ type: "text_delta", text: "Hello", parentToolUseId: null }, 0);
-    expect(router.state.textBlocks.has("__root__")).toBe(true);
+    expect(router.state.textBlocks.has(ROOT_KEY)).toBe(true);
 
     router.handleEvent({ type: "text_done", text: "Hello", parentToolUseId: null }, 0);
-    expect(router.state.textBlocks.has("__root__")).toBe(false);
+    expect(router.state.textBlocks.has(ROOT_KEY)).toBe(false);
   });
 
   test("multiple text blocks are separate components", () => {
@@ -53,7 +54,9 @@ describe("createEventRouter", () => {
     router.handleEvent({ type: "text_delta", text: "Second", parentToolUseId: null }, 0);
     router.handleEvent({ type: "text_done", text: "Second", parentToolUseId: null }, 0);
 
-    expect(root.children).toHaveLength(2);
+    // 2 text blocks + 1 thinking indicator (re-shown after last text_done)
+    const nonThinking = root.children.filter((c) => !(c instanceof ThinkingIndicator));
+    expect(nonThinking).toHaveLength(2);
   });
 
   test("tool_start adds a formatted line with no padding", () => {
@@ -152,7 +155,7 @@ describe("createEventRouter", () => {
   test("events with parentToolUseId route to subagent container", () => {
     const { root, router } = setup();
 
-    // task_started creates the PipeBox
+    // task_started creates the PipeBox and adds a thinking indicator inside
     router.handleEvent(
       {
         type: "task_started",
@@ -165,12 +168,17 @@ describe("createEventRouter", () => {
     );
 
     const subBox = root.children[0] as PipeBox;
+    expect(subBox.children).toHaveLength(1); // thinking indicator
+    expect(subBox.children[0]).toBeInstanceOf(ThinkingIndicator);
 
+    // text_delta removes the thinking indicator and adds text
     router.handleEvent({ type: "text_delta", text: "Reviewing...", parentToolUseId: "t1" }, 0);
-    expect(subBox.children).toHaveLength(1);
+    expect(subBox.children).toHaveLength(1); // text only
 
+    // text_done re-shows thinking indicator
     router.handleEvent({ type: "text_done", text: "Reviewing...", parentToolUseId: "t1" }, 0);
 
+    // tool_start removes thinking and adds tool line
     router.handleEvent(
       {
         type: "tool_start",
@@ -181,7 +189,7 @@ describe("createEventRouter", () => {
       },
       0,
     );
-    expect(subBox.children).toHaveLength(2);
+    expect(subBox.children).toHaveLength(2); // text + tool line
   });
 
   test("task_done sets footer on PipeBox with summary", () => {
@@ -223,7 +231,7 @@ describe("createEventRouter", () => {
     expect(rendered).toContain("3.0s");
   });
 
-  test("tool_done for non-subagent does nothing", () => {
+  test("tool_done re-shows thinking indicator", () => {
     const { root, router } = setup();
 
     router.handleEvent(
@@ -236,13 +244,15 @@ describe("createEventRouter", () => {
       },
       0,
     );
-    const count = root.children.length;
+    expect(root.children).toHaveLength(1); // tool line
 
     router.handleEvent(
       { type: "tool_done", toolId: "t1", result: "content", parentToolUseId: null },
       0,
     );
-    expect(root.children).toHaveLength(count);
+    // tool line + thinking indicator
+    expect(root.children).toHaveLength(2);
+    expect(root.children[1]).toBeInstanceOf(ThinkingIndicator);
   });
 
   test("retry event adds message", () => {
@@ -305,22 +315,27 @@ describe("createEventRouter", () => {
     expect(rendered).toContain("#3/10");
   });
 
-  test("thinking indicator is removed on first agent event", () => {
+  test("thinking indicator is removed on first agent output and re-shown after text_done", () => {
     const { root, router } = setup();
 
     router.showStepHeader(1, 1, "Do stuff");
 
     // spacer + header + thinking = 3
     expect(root.children).toHaveLength(3);
-    expect(router.state.thinkingIndicator).not.toBeNull();
+    expect(router.state.thinkingIndicators.get(ROOT_KEY)).toBeDefined();
 
     router.handleEvent({ type: "text_delta", text: "Hi", parentToolUseId: null }, 0);
 
     // thinking removed, text_delta added: spacer + header + text = 3
     expect(root.children).toHaveLength(3);
-    expect(router.state.thinkingIndicator).toBeNull();
-    // The thinking indicator should no longer be in the tree
+    expect(router.state.thinkingIndicators.get(ROOT_KEY)).toBeUndefined();
     expect(root.children.some((c) => c instanceof ThinkingIndicator)).toBe(false);
+
+    // After text_done, thinking indicator re-appears
+    router.handleEvent({ type: "text_done", text: "Hi", parentToolUseId: null }, 0);
+    expect(root.children).toHaveLength(4); // spacer + header + text + thinking
+    expect(router.state.thinkingIndicators.get(ROOT_KEY)).toBeDefined();
+    expect(root.children.some((c) => c instanceof ThinkingIndicator)).toBe(true);
   });
 
   test("showCompletion adds marker", () => {

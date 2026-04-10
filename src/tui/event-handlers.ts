@@ -4,6 +4,9 @@ import { dim } from "../lib/ansi.js";
 import { PipeBox, nextAgentColor } from "./components/pipe-box.js";
 import { formatTokenCount, formatToolLine } from "./formatters.js";
 
+/** Key used for the root-level context in maps keyed by parentToolUseId. */
+export const ROOT_KEY = "__root__";
+
 /** Any component that can hold children (Container, PipeBox, etc.) */
 export type ChildContainer = Component & {
   children: Component[];
@@ -19,7 +22,7 @@ export interface LoopTUIState {
   toolIdToContainer: Map<string, ChildContainer>;
   toolIdToParentContainer: Map<string, ChildContainer>;
   textBlocks: Map<string, { textRef: Text; accumulated: string }>;
-  thinkingIndicator: { node: IndicatorNode; parent: ChildContainer } | null;
+  thinkingIndicators: Map<string, { node: IndicatorNode; parent: ChildContainer }>;
 }
 
 export function handleTextDelta(
@@ -28,7 +31,7 @@ export function handleTextDelta(
   requestRender: () => void,
   containerForEvent: (parentToolUseId: string | null) => ChildContainer,
 ): void {
-  const key = event.parentToolUseId ?? "__root__";
+  const key = event.parentToolUseId ?? ROOT_KEY;
   const container = containerForEvent(event.parentToolUseId);
   const existing = state.textBlocks.get(key);
   if (existing) {

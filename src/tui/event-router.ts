@@ -5,6 +5,7 @@ import type { RunSummary, TokenUsage } from "../lib/types.js";
 import { ThinkingIndicator } from "./components/thinking-indicator.js";
 import type { ChildContainer, LoopTUIState } from "./event-handlers.js";
 import {
+  ROOT_KEY,
   handleTaskDone,
   handleTaskStarted,
   handleTextDelta,
@@ -55,18 +56,37 @@ export function createEventRouter(
     toolIdToContainer: new Map(),
     toolIdToParentContainer: new Map(),
     textBlocks: new Map(),
-    thinkingIndicator: null,
+    thinkingIndicators: new Map(),
   };
+
+  let sessionDone = false;
 
   function currentContainer(): ChildContainer {
     return state.containerStack[state.containerStack.length - 1];
   }
 
-  function removeThinkingIndicator(): void {
-    if (state.thinkingIndicator) {
-      state.thinkingIndicator.node.stop();
-      state.thinkingIndicator.parent.removeChild(state.thinkingIndicator.node);
-      state.thinkingIndicator = null;
+  function addThinkingIndicator(key: string, container: ChildContainer): void {
+    if (sessionDone || state.thinkingIndicators.has(key)) return;
+    const thinking = new ThinkingIndicator(requestRender);
+    container.addChild(thinking);
+    thinking.start();
+    thinking.setText("Thinking...");
+    state.thinkingIndicators.set(key, { node: thinking, parent: container });
+    requestRender();
+  }
+
+  function removeThinkingIndicator(key: string): void {
+    const indicator = state.thinkingIndicators.get(key);
+    if (indicator) {
+      indicator.node.stop();
+      indicator.parent.removeChild(indicator.node);
+      state.thinkingIndicators.delete(key);
+    }
+  }
+
+  function removeAllThinkingIndicators(): void {
+    for (const [key] of state.thinkingIndicators) {
+      removeThinkingIndicator(key);
     }
   }
 
@@ -91,17 +111,24 @@ export function createEventRouter(
       headerInfo.node.setText(formatStepHeader(step, totalSteps, task, iteration, max, model));
     }
 
-    if (state.thinkingIndicator) {
-      if (event.type === "session_start") {
-        state.thinkingIndicator.node.setText("Thinking...");
+    if (event.type === "session_start") {
+      const rootIndicator = state.thinkingIndicators.get(ROOT_KEY);
+      if (rootIndicator) {
+        rootIndicator.node.setText("Thinking...");
         requestRender();
-      } else if (
-        event.type === "text_delta" ||
-        event.type === "tool_start" ||
-        event.type === "task_started" ||
-        event.type === "error"
-      ) {
-        removeThinkingIndicator();
+      }
+    }
+
+    if (event.type === "text_delta" || event.type === "tool_start") {
+      const key = event.parentToolUseId ?? ROOT_KEY;
+      if (state.thinkingIndicators.has(key)) {
+        removeThinkingIndicator(key);
+        requestRender();
+      }
+    }
+    if (event.type === "error") {
+      if (state.thinkingIndicators.has(ROOT_KEY)) {
+        removeThinkingIndicator(ROOT_KEY);
         requestRender();
       }
     }
@@ -110,15 +137,29 @@ export function createEventRouter(
       case "text_delta":
         handleTextDelta(event, state, requestRender, containerForEvent);
         break;
-      case "text_done":
-        state.textBlocks.delete(event.parentToolUseId ?? "__root__");
+      case "text_done": {
+        state.textBlocks.delete(event.parentToolUseId ?? ROOT_KEY);
+        const key = event.parentToolUseId ?? ROOT_KEY;
+        const container = containerForEvent(event.parentToolUseId);
+        addThinkingIndicator(key, container);
         break;
+      }
       case "tool_start":
         handleToolStart(event, state, requestRender, containerForEvent);
+        if (event.tool === "Task" || event.tool === "Agent") {
+          const subContainer = state.toolIdToContainer.get(event.toolId);
+          if (subContainer) {
+            addThinkingIndicator(event.toolId, subContainer);
+          }
+        }
         break;
-      case "tool_done":
+      case "tool_done": {
         state.toolIdToContainer.delete(event.toolId);
+        const key = event.parentToolUseId ?? ROOT_KEY;
+        const container = containerForEvent(event.parentToolUseId);
+        addThinkingIndicator(key, container);
         break;
+      }
       case "retry": {
         const container = currentContainer();
         container.addChild(
@@ -133,9 +174,12 @@ export function createEventRouter(
         requestRender();
         break;
       }
-      case "task_started":
+      case "task_started": {
         handleTaskStarted(event, state, requestRender, currentContainer);
+        const subContainer = state.toolIdToContainer.get(event.toolUseId);
+        if (subContainer) addThinkingIndicator(event.toolUseId, subContainer);
         break;
+      }
       case "user_message": {
         const container = currentContainer();
         container.addChild(new Text(formatUserMessage(event.text), 0, 0));
@@ -143,7 +187,12 @@ export function createEventRouter(
         break;
       }
       case "task_done":
+        removeThinkingIndicator(event.toolUseId);
         handleTaskDone(event, state, requestRender, currentContainer);
+        break;
+      case "done":
+        sessionDone = true;
+        removeAllThinkingIndicators();
         break;
       default:
         break;
@@ -163,7 +212,8 @@ export function createEventRouter(
     state.toolIdToContainer.clear();
     state.toolIdToParentContainer.clear();
     state.textBlocks.clear();
-    removeThinkingIndicator();
+    removeAllThinkingIndicators();
+    sessionDone = false;
     root.addChild(new Spacer());
     const headerNode = new Text(header, 0, 0);
     root.addChild(headerNode);
@@ -171,7 +221,7 @@ export function createEventRouter(
     const thinking = new ThinkingIndicator(requestRender);
     root.addChild(thinking);
     thinking.start();
-    state.thinkingIndicator = { node: thinking, parent: root };
+    state.thinkingIndicators.set(ROOT_KEY, { node: thinking, parent: root });
     requestRender();
   }
 
