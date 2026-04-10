@@ -818,6 +818,16 @@ describe("readLines", () => {
     stream.end();
     expect(await promise).toEqual(["abc", "def"]);
   });
+
+  it("unblocks when stream is destroyed without error", async () => {
+    const stream = new PassThrough();
+    const promise = collect(readLines(stream));
+    stream.write("before\n");
+    // destroy() without error emits 'close' but not 'end'
+    stream.destroy();
+    const lines = await promise;
+    expect(lines).toEqual(["before"]);
+  });
 });
 
 describe("streamEvents", () => {
@@ -1061,6 +1071,28 @@ describe("streamEvents", () => {
     const promise = collect(streamEvents(stream));
     stream.end();
     expect(await promise).toEqual([]);
+  });
+
+  it("ends cleanly when stream closes without done event", async () => {
+    const stream = new PassThrough();
+    const promise = collect(streamEvents(stream));
+
+    stream.write(
+      ndjson({
+        type: "system",
+        subtype: "init",
+        session_id: "s1",
+        tools: [],
+        model: "test",
+        cwd: "/project",
+      }),
+    );
+    // Simulate crash: stream closes without emitting a result/done event
+    stream.destroy();
+
+    const events = await promise;
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("session_start");
   });
 });
 

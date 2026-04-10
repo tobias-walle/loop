@@ -49,7 +49,31 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
         logger.error("Claude process error", { pid, error: err.message });
       });
       proc.on("exit", (code, signal) => {
-        logger.debug("Claude process exited", { pid, code, signal });
+        logger.info("Claude process exited", { pid, code, signal });
+        // Ensure stdout closes so readLines unblocks even if the stream
+        // wasn't closed cleanly (e.g. crash, SIGKILL).
+        if (proc.stdout && !proc.stdout.destroyed) {
+          proc.stdout.destroy();
+        }
+      });
+
+      // Capture stderr so diagnostic output from Claude is not silently lost
+      let stderrBuf = "";
+      proc.stderr?.on("data", (chunk: Buffer) => {
+        stderrBuf += chunk.toString();
+        // Flush complete lines
+        let idx = stderrBuf.indexOf("\n");
+        while (idx !== -1) {
+          const line = stderrBuf.slice(0, idx).trim();
+          if (line) logger.warn("Claude stderr", { pid, line });
+          stderrBuf = stderrBuf.slice(idx + 1);
+          idx = stderrBuf.indexOf("\n");
+        }
+      });
+      proc.stderr?.on("end", () => {
+        if (stderrBuf.trim()) {
+          logger.warn("Claude stderr", { pid, line: stderrBuf.trim() });
+        }
       });
 
       if (interactive) {
@@ -57,8 +81,13 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
           type: "user",
           message: { role: "user", content: prompt },
         });
-        proc.stdin?.write(`${initMessage}\n`);
-        logger.debug("Sent initial prompt via stdin", { pid, promptLength: prompt.length });
+        const written = proc.stdin?.write(`${initMessage}\n`) ?? false;
+        logger.debug("Sent initial prompt via stdin", {
+          pid,
+          promptLength: prompt.length,
+          stdinWritable: proc.stdin?.writable ?? false,
+          written,
+        });
       }
 
       const sentMessages: string[] = [];
@@ -120,8 +149,20 @@ async function* wrapTerminateOnEnd(
       return;
     }
   }
+
+  // Stream ended without a terminal event — the process crashed or was killed.
+  // Synthesize an error so the runner doesn't treat this as success.
+  const exitCode = proc.exitCode;
+  const msg =
+    exitCode != null
+      ? `Claude process exited unexpectedly (code ${exitCode})`
+      : "Claude event stream ended without completion";
+  logger.warn(msg, { pid, exitCode });
+  proc.stdin?.end();
+  if (exitCode == null) proc.kill("SIGTERM");
+  yield { type: "error", message: msg };
 }
 
 async function* emptyEvents(): AsyncGenerator<import("../types.js").AgentEvent> {
-  // No stdout, yield nothing
+  yield { type: "error", message: "Claude process has no stdout stream" };
 }

@@ -32,7 +32,12 @@ export async function processAgentEvents(
   let errorMsg: string | undefined;
   let eventCount = 0;
 
+  ctx.logger.debug(`${stepLabel} - waiting for first agent event`);
+
   for await (const event of session.events) {
+    if (eventCount === 0) {
+      ctx.logger.debug(`${stepLabel} - first agent event received`, { eventType: event.type });
+    }
     eventCount++;
     if (ctx.isAborted()) break;
 

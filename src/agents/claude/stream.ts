@@ -49,9 +49,16 @@ export async function* readLines(stream: Readable): AsyncGenerator<string> {
     }
   };
 
+  // Also handle 'close' — destroy() emits 'close' but not 'end',
+  // so we need this to unblock when the process force-closes stdout.
+  const onClose = () => {
+    if (!streamEnded) onEnd();
+  };
+
   stream.on("data", onData);
   stream.on("end", onEnd);
   stream.on("error", onError);
+  stream.on("close", onClose);
 
   try {
     while (true) {
@@ -79,6 +86,7 @@ export async function* readLines(stream: Readable): AsyncGenerator<string> {
     stream.off("data", onData);
     stream.off("end", onEnd);
     stream.off("error", onError);
+    stream.off("close", onClose);
   }
 }
 
