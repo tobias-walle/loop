@@ -92,6 +92,11 @@ export async function executeStep(
 
     const iterResult = await processAgentEvents(ctx, session, stepIndex, stepLabel);
 
+    // Wait for the process to fully exit before continuing, so the next
+    // iteration doesn't race with a still-shutting-down process (e.g. Claude
+    // Code session locks).
+    await session.exited;
+
     ctx.setCurrentSession(null);
     totalCost += iterResult.cost;
     totalDuration += iterResult.duration;

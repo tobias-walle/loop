@@ -45,16 +45,20 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
         logger.info("Claude process spawned", { pid, interactive });
       }
 
+      const exited = new Promise<void>((resolveExit) => {
+        proc.on("exit", (code, signal) => {
+          logger.info("Claude process exited", { pid, code, signal });
+          // Ensure stdout closes so readLines unblocks even if the stream
+          // wasn't closed cleanly (e.g. crash, SIGKILL).
+          if (proc.stdout && !proc.stdout.destroyed) {
+            proc.stdout.destroy();
+          }
+          resolveExit();
+        });
+      });
+
       proc.on("error", (err) => {
         logger.error("Claude process error", { pid, error: err.message });
-      });
-      proc.on("exit", (code, signal) => {
-        logger.info("Claude process exited", { pid, code, signal });
-        // Ensure stdout closes so readLines unblocks even if the stream
-        // wasn't closed cleanly (e.g. crash, SIGKILL).
-        if (proc.stdout && !proc.stdout.destroyed) {
-          proc.stdout.destroy();
-        }
       });
 
       // Capture stderr so diagnostic output from Claude is not silently lost
@@ -116,6 +120,7 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
 
       return {
         events,
+        exited,
 
         sendMessage(text: string): void {
           if (!interactive) {

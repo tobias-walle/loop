@@ -52,6 +52,7 @@ function createSlowStubAdapter(): AgentAdapter {
 
       return {
         events: generateEvents(),
+        exited: Promise.resolve(),
         sendMessage(_text: string): void {
           // no-op for stub
         },

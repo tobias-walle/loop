@@ -49,6 +49,8 @@ export interface AgentSession {
   sendMessage(text: string): void;
   /** Kill the process. */
   abort(): void;
+  /** Resolves when the underlying process has fully exited. */
+  exited: Promise<void>;
 }
 
 /** Factory that creates sessions. Injected into the runner. */

@@ -239,6 +239,7 @@ export function createStubAdapter(scenarios: Scenario | Scenario[]): AgentAdapte
 
       return {
         events: generateEvents(),
+        exited: Promise.resolve(),
 
         sendMessage(text: string): void {
           messages.push(text);
