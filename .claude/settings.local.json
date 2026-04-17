@@ -1,0 +1,5 @@
+{
+  "permissions": {
+    "allow": ["Bash(sandbox --help)", "Bash(bun run:*)"]
+  }
+}
