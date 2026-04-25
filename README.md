@@ -6,9 +6,17 @@ A CLI tool that runs coding agents in loops and sequences with a minimal TUI for
 
 Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be installed.
 
+Loop is not yet published to a registry. Install from source:
+
 ```bash
-npm install -g loop
+git clone https://github.com/tobias-walle/loop.git
+cd loop
+bun install
+bun run build
+bun link
 ```
+
+> ⚠️ **Container required.** Loop runs Claude Code with `--dangerously-skip-permissions`, so it refuses to start outside a sandbox. Run it inside Docker / Podman, a devcontainer, GitHub Codespaces, or a Kubernetes pod.
 
 ## Usage
 
@@ -65,8 +73,9 @@ The TUI streams agent output in real time: text, tool calls, retries, and subage
 
 ```bash
 bun install
-bun test              # run tests
-bun run check         # lint and format (biome)
-bun run typecheck     # type check
+bun run check         # biome, typecheck, tests, and knip (run before committing)
+bun test              # run tests only
 bun run build         # bundle to dist/
 ```
+
+Sessions are logged to `.loop/sessions/<date>-<hash>/session.jsonl` as structured JSONL covering the full run lifecycle (config, steps, iterations, agent events, tool calls, retries, rate limits, aborts, and summaries).
