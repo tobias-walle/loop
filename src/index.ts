@@ -11,6 +11,26 @@ export type { Scenario, ToolCall, Turn } from "./agents/stub.js";
 export { createStubAdapter } from "./agents/stub.js";
 export { createClaudeAdapter } from "./agents/claude.js";
 export type { ClaudeAdapterOptions } from "./agents/claude.js";
+export { createConfiguredAgent } from "./agents/factory.js";
+export type { CreateConfiguredAgentOptions } from "./agents/factory.js";
+export { createPiRpcAdapter } from "./agents/pi.js";
+export type { PiRpcAdapterOptions } from "./agents/pi.js";
+export {
+  ConfigError,
+  findProjectConfigPath,
+  getUserConfigPath,
+  loadLoopConfig,
+  readConfigFile,
+} from "./lib/config/index.js";
+export type {
+  AgentConfig,
+  AgentName,
+  ConfigCliOverrides,
+  LoadedConfig,
+  LoadConfigOptions,
+  LoopConfigFile,
+  LoopRuntimeConfig,
+} from "./lib/config/index.js";
 export { ParseError, formatHelp, parseArgs } from "./lib/parser.js";
 export { createRunner } from "./lib/runner.js";
 export type { RunnerOptions } from "./lib/runner.js";

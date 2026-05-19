@@ -15,6 +15,8 @@ const FLAGS = {
   "--until <condition>": "Loop until the agent signals the condition is met",
   "--repeat <n>": "Repeat the task exactly n times",
   "--max <n>": "Safety cap for --until loops (max iterations)",
+  "--agent <claude|pi>": "Agent backend to use",
+  "--": "Pass remaining args to the selected agent",
   "--help, -h": "Show this help message",
   "--version, -v": "Show version number",
 } as const;
@@ -24,6 +26,7 @@ const EXAMPLES = [
   ['loop "Write tests" "Review code"', "Run tasks sequentially"],
   ['loop "Fix lint errors" --repeat 3', "Repeat a task 3 times"],
   ['loop "Improve coverage" --until "Coverage above 80%" --max 5', "Loop with a condition and cap"],
+  ['loop --agent pi "Fix tests" -- --profile fast', "Use pi and pass args to it"],
   ['loop [ "Write code" "Review" ] --repeat 3', "Repeat a group of tasks"],
   ["loop init", "Create a LOOP.md template"],
 ] as const;
@@ -61,30 +64,51 @@ export function formatHelp(): string {
 }
 
 export function parseArgs(args: string[]): LoopConfig {
-  if (args.length === 0) {
+  const passthroughIndex = args.indexOf("--");
+  const passthroughArgs = passthroughIndex === -1 ? [] : args.slice(passthroughIndex + 1);
+  const loopArgs = passthroughIndex === -1 ? args : args.slice(0, passthroughIndex);
+
+  if (loopArgs.length === 0) {
     throw new ParseError(`No arguments provided.\n\n${formatHelp()}`);
   }
 
   // Handle --help / -h anywhere in args
-  if (args.includes("--help") || args.includes("-h")) {
+  if (loopArgs.includes("--help") || loopArgs.includes("-h")) {
     return { steps: [], command: "help" };
   }
 
   // Handle --version / -v
-  if (args.includes("--version") || args.includes("-v")) {
+  if (loopArgs.includes("--version") || loopArgs.includes("-v")) {
     return { steps: [], command: "version" };
   }
 
+  let agent: LoopConfig["agent"];
+  let i = 0;
+  while (i < loopArgs.length && loopArgs[i] === "--agent") {
+    if (i + 1 >= loopArgs.length) {
+      throw new ParseError("--agent requires a value. Usage: --agent <claude|pi>");
+    }
+    const value = loopArgs[i + 1];
+    if (value !== "claude" && value !== "pi") {
+      throw new ParseError(`--agent must be "claude" or "pi", got "${value}".`);
+    }
+    agent = value;
+    i += 2;
+  }
+
   // Handle subcommands
-  if (args[0] === "init") {
-    return { steps: [], command: "init" };
+  if (loopArgs[i] === "init") {
+    return withGlobalOptions({ steps: [], command: "init" }, agent, passthroughArgs);
+  }
+
+  if (i >= loopArgs.length) {
+    throw new ParseError(`No tasks provided.\n\n${formatHelp()}`);
   }
 
   const steps: Step[] = [];
-  let i = 0;
 
-  while (i < args.length) {
-    const arg = args[i];
+  while (i < loopArgs.length) {
+    const arg = loopArgs[i];
 
     // Flags at the start or after another flag without a preceding element
     if (arg.startsWith("--")) {
@@ -97,19 +121,19 @@ export function parseArgs(args: string[]): LoopConfig {
       // Parse group
       i++;
       const tasks: string[] = [];
-      while (i < args.length && args[i] !== "]") {
-        if (args[i] === "[") {
+      while (i < loopArgs.length && loopArgs[i] !== "]") {
+        if (loopArgs[i] === "[") {
           throw new ParseError("Nested brackets are not supported. Use a flat structure instead.");
         }
-        if (args[i].startsWith("--")) {
+        if (loopArgs[i].startsWith("--")) {
           throw new ParseError(
-            `Flag "${args[i]}" inside a group is not allowed. Place flags after the closing "]".`,
+            `Flag "${loopArgs[i]}" inside a group is not allowed. Place flags after the closing "]".`,
           );
         }
-        tasks.push(args[i]);
+        tasks.push(loopArgs[i]);
         i++;
       }
-      if (i >= args.length) {
+      if (i >= loopArgs.length) {
         throw new ParseError('Unclosed bracket. Expected "]" to close the group.');
       }
       if (tasks.length === 0) {
@@ -118,7 +142,7 @@ export function parseArgs(args: string[]): LoopConfig {
       // Skip the "]"
       i++;
       const step: Step = { type: "group", tasks };
-      i = consumeFlags(args, i, step);
+      i = consumeFlags(loopArgs, i, step);
       steps.push(step);
     } else if (arg === "]") {
       throw new ParseError('Unexpected "]" without a matching opening "[".');
@@ -126,12 +150,22 @@ export function parseArgs(args: string[]): LoopConfig {
       // Plain task
       const step: Step = { type: "task", task: arg };
       i++;
-      i = consumeFlags(args, i, step);
+      i = consumeFlags(loopArgs, i, step);
       steps.push(step);
     }
   }
 
-  return { steps };
+  return withGlobalOptions({ steps }, agent, passthroughArgs);
+}
+
+function withGlobalOptions(
+  config: LoopConfig,
+  agent: LoopConfig["agent"],
+  passthroughArgs: string[],
+): LoopConfig {
+  if (agent) config.agent = agent;
+  if (passthroughArgs.length > 0) config.passthroughArgs = passthroughArgs;
+  return config;
 }
 
 function consumeFlags(args: string[], startIndex: number, step: Step): number {

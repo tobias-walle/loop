@@ -93,10 +93,9 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
     handleEvent(event: AgentEvent, stepIndex: number): void {
       if (event.type === "user_message") {
         const node = pendingMessageNodes.get(event.text);
-        if (node) {
-          pendingMessagesContainer.removeChild(node);
-          pendingMessageNodes.delete(event.text);
-        }
+        if (!node) return;
+        pendingMessagesContainer.removeChild(node);
+        pendingMessageNodes.delete(event.text);
       }
       router.handleEvent(event, stepIndex);
     },

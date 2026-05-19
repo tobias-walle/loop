@@ -19,6 +19,8 @@ export type Step =
 export type LoopConfig = {
   steps: Step[];
   command?: "init" | "help" | "version";
+  agent?: "claude" | "pi";
+  passthroughArgs?: string[];
 };
 
 /** Token usage counters. */

@@ -87,6 +87,7 @@ export async function executeStep(
     }
     for (const msg of ctx.pendingMessages) {
       session.sendMessage(msg);
+      ctx.onEvent?.({ type: "user_message", text: msg }, stepIndex);
     }
     ctx.pendingMessages.length = 0;
 

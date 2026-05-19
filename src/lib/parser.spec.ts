@@ -229,6 +229,42 @@ describe("parseArgs", () => {
     });
   });
 
+  describe("agent options", () => {
+    test("parses --agent before tasks", () => {
+      const result = parseArgs(["--agent", "pi", "Fix tests"]);
+      expect(result).toEqual({
+        steps: [{ type: "task", task: "Fix tests" }],
+        agent: "pi",
+      });
+    });
+
+    test("captures trailing passthrough args", () => {
+      const result = parseArgs(["Fix tests", "--", "--profile", "fast"]);
+      expect(result).toEqual({
+        steps: [{ type: "task", task: "Fix tests" }],
+        passthroughArgs: ["--profile", "fast"],
+      });
+    });
+
+    test("captures passthrough after task flags", () => {
+      const result = parseArgs(["Fix tests", "--repeat", "2", "--", "--profile", "fast"]);
+      expect(result).toEqual({
+        steps: [{ type: "task", task: "Fix tests", repeat: 2 }],
+        passthroughArgs: ["--profile", "fast"],
+      });
+    });
+
+    test("rejects -- before tasks", () => {
+      expect(() => parseArgs(["--", "--profile", "fast"])).toThrow("No arguments provided");
+    });
+
+    test("rejects unknown agent", () => {
+      expect(() => parseArgs(["--agent", "other", "task"])).toThrow(
+        '--agent must be "claude" or "pi"',
+      );
+    });
+  });
+
   describe("validation errors", () => {
     test("empty args throws", () => {
       expect(() => parseArgs([])).toThrow(ParseError);

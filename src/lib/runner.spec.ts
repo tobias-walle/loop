@@ -4,7 +4,11 @@ import { SIMPLE_TEXT } from "../testing/scenarios/basic.js";
 import { RALPH_LOOP_TWO_ITERS } from "../testing/scenarios/loops.js";
 import { createTestRunner, runToCompletion } from "../testing/test-setup.js";
 import { createRunner } from "./runner.js";
-import type { Step } from "./types.js";
+import type { Step, TokenUsage } from "./types.js";
+
+function emptyTestUsage(): TokenUsage {
+  return { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 };
+}
 
 describe("runner", () => {
   test("single task execution", async () => {
@@ -213,6 +217,82 @@ describe("runner", () => {
     expect(result.stepResults[0].error).toBe("Something went wrong");
     expect(result.stepResults[1].exitReason).toBe("error");
     expect(result.stepResults[1].error).toBe("Skipped due to previous error");
+  });
+
+  test("queued user messages emit user_message when delivered", async () => {
+    const sentMessages: string[] = [];
+    const events: string[] = [];
+    const runner = createRunner([{ type: "task", task: "Step" }], {
+      agent: {
+        spawn() {
+          return {
+            events: (async function* () {
+              yield {
+                type: "done",
+                result: "ok",
+                costUsd: 0,
+                durationMs: 0,
+                usage: emptyTestUsage(),
+              };
+            })(),
+            sendMessage(text: string) {
+              sentMessages.push(text);
+            },
+            abort() {},
+            exited: Promise.resolve(),
+          };
+        },
+      },
+      onEvent(event) {
+        if (event.type === "user_message") events.push(event.text);
+      },
+    });
+
+    runner.sendMessage("what is 1 + 1?");
+    await runner.run();
+
+    expect(sentMessages).toEqual(["what is 1 + 1?"]);
+    expect(events).toEqual(["what is 1 + 1?"]);
+  });
+
+  test("active user messages emit user_message immediately", async () => {
+    let releaseDone: (() => void) | undefined;
+    const active = new Promise<void>((resolve) => {
+      releaseDone = resolve;
+    });
+    const events: string[] = [];
+    const runner = createRunner([{ type: "task", task: "Step" }], {
+      agent: {
+        spawn() {
+          return {
+            events: (async function* () {
+              await active;
+              yield {
+                type: "done",
+                result: "ok",
+                costUsd: 0,
+                durationMs: 0,
+                usage: emptyTestUsage(),
+              };
+            })(),
+            sendMessage() {},
+            abort() {},
+            exited: Promise.resolve(),
+          };
+        },
+      },
+      onEvent(event) {
+        if (event.type === "user_message") events.push(event.text);
+      },
+    });
+
+    const resultPromise = runner.run();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    runner.sendMessage("what is 1 + 1?");
+    releaseDone?.();
+    await resultPromise;
+
+    expect(events).toEqual(["what is 1 + 1?"]);
   });
 
   test("cost and duration accumulation across steps", async () => {

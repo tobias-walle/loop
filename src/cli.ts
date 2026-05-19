@@ -2,8 +2,9 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createClaudeAdapter } from "./agents/claude.js";
+import { createConfiguredAgent } from "./agents/factory.js";
 import { boldRed, dim } from "./lib/ansi.js";
+import { ConfigError, type LoopRuntimeConfig, loadLoopConfig } from "./lib/config/index.js";
 import { createLogger } from "./lib/logging.js";
 import { ParseError, formatHelp, parseArgs } from "./lib/parser.js";
 import { createRunner } from "./lib/runner.js";
@@ -54,7 +55,7 @@ function handlePreTuiCommand(config: LoopConfig): boolean {
 function checkSandbox(): void {
   if (!isSandboxed()) {
     console.error(
-      `${boldRed("\n  ⚠️  SECURITY WARNING\n")}\n  loop runs with --dangerously-skip-permissions, which gives the\n  agent unrestricted access to your system.\n\n  This tool must only be used inside a container:\n${dim("    - Docker / Podman\n")}${dim("    - Devcontainers\n")}${dim("    - GitHub Codespaces\n")}${dim("    - Kubernetes pods\n")}`,
+      `${boldRed("\n  ⚠️  SECURITY WARNING\n")}\n  loop gives coding agents tool access to your project and shell.\n  Use it only in a container or trusted sandbox.\n\n${dim("    - Docker / Podman\n")}${dim("    - Devcontainers\n")}${dim("    - GitHub Codespaces\n")}${dim("    - Kubernetes pods\n")}`,
     );
     process.exit(1);
   }
@@ -78,7 +79,22 @@ async function main(): Promise<void> {
 
   const sessionDir = createSessionDir(process.cwd());
   const logger = createLogger(sessionDir);
-  const adapter = createClaudeAdapter({ interactive: true, logger });
+  let runtimeConfig: LoopRuntimeConfig;
+  try {
+    runtimeConfig = loadLoopConfig({ cli: { agent: config.agent } }).config;
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+  const adapter = createConfiguredAgent({
+    selectedAgent: runtimeConfig.agent,
+    config: runtimeConfig,
+    passthroughArgs: config.passthroughArgs ?? [],
+    logger,
+  });
 
   logger.info("Session initialized", { source: "loop", type: "session_init", sessionDir });
   logger.info("Config parsed", {
@@ -86,11 +102,13 @@ async function main(): Promise<void> {
     type: "config_parsed",
     stepCount: config.steps.length,
     commandType: config.command,
+    agent: runtimeConfig.agent,
+    passthroughArgCount: config.passthroughArgs?.length ?? 0,
   });
-  logger.debug("Claude adapter created", {
+  logger.debug("Agent adapter created", {
     source: "loop",
     type: "adapter_created",
-    interactive: true,
+    agent: runtimeConfig.agent,
   });
 
   let runner: ReturnType<typeof createRunner>;
@@ -98,8 +116,8 @@ async function main(): Promise<void> {
   const tui = createLoopTUI({
     onUserMessage: (message) => {
       logger.info("User message received", { source: "loop", type: "user_message", message });
-      runner.sendMessage(message);
       tui.showUserMessage(message);
+      runner.sendMessage(message);
     },
     onInterrupt: () => {
       logger.warn("User interrupt received", { source: "loop", type: "interrupt" });

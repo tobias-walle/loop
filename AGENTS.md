@@ -28,6 +28,8 @@ bun run check
 
 Key design principle: The runner and TUI never import agent-specific code. Everything goes through the `AgentAdapter` interface.
 
+Architecture decisions are documented in `docs/adr/`.
+
 ## Session Logging
 
 Each run creates a session directory at `.loop/sessions/<date>-<hash>/` containing a `session.jsonl` file. This is a structured JSONL log with full debug coverage of the run lifecycle.

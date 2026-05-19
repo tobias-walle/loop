@@ -74,8 +74,8 @@ async function main(): Promise<void> {
 
   const tui = createLoopTUI({
     onUserMessage: (message) => {
-      ref.runner?.sendMessage(message);
       tui.showUserMessage(message);
+      ref.runner?.sendMessage(message);
     },
     onInterrupt: () => {
       tui.stop();

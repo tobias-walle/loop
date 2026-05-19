@@ -4,7 +4,7 @@ A CLI tool that runs coding agents in loops and sequences with a minimal TUI for
 
 ## Installation
 
-Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be installed.
+Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) by default. You can also opt in to [pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) as an agent backend.
 
 Loop is not yet published to a registry. Install from source:
 
@@ -35,6 +35,9 @@ loop "Work on next task in PLAN.md" --until "All tasks are done" --max 10
 
 # Fixed repeat
 loop "Run the test suite and fix failures" --repeat 3
+
+# Use pi for one run and pass pi-specific args
+loop --agent pi "Fix tests" -- --profile fast
 ```
 
 ### Grouping with brackets
@@ -58,6 +61,24 @@ Flags bind to the immediately preceding task or `]`.
 | `--until "condition"` | Repeat until the condition is met |
 | `--repeat N` | Repeat exactly N times |
 | `--max N` | Safety cap for `--until` loops |
+| `--agent claude|pi` | Select the agent backend for this run |
+| `--` | Pass remaining args to the selected agent |
+
+### Configuration
+
+Loop reads TOML config from `$LOOP_CONFIG_HOME/config.toml`, `$XDG_CONFIG_HOME/loop/config.toml`, or `~/.config/loop/config.toml`, plus the nearest project `.loop/config.toml`.
+
+```toml
+agent = "pi"
+
+[agents.pi]
+command = "pi"
+model = "sonnet"
+args = ["--profile", "fast"]
+env = { PI_OFFLINE = "1" }
+```
+
+Precedence is defaults, user config, project config, environment variables, then CLI flags. Supported environment overrides are `LOOP_AGENT`, `LOOP_PI_COMMAND`, `LOOP_PI_MODEL`, `LOOP_CLAUDE_COMMAND`, and `LOOP_CLAUDE_MODEL`.
 
 ### Project template
 

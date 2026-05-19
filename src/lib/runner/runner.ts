@@ -151,6 +151,7 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
           textLength: text.length,
         });
         currentSession.sendMessage(text);
+        opts.onEvent?.({ type: "user_message", text }, state.step);
       } else {
         logger.debug("Message queued (no active session)", {
           textLength: text.length,

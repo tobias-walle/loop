@@ -4,6 +4,10 @@ import type { AgentAdapter, AgentSession, AgentSpawnOptions } from "../types.js"
 import { generateInteractiveEvents, streamEvents } from "./stream.js";
 
 export interface ClaudeAdapterOptions {
+  command?: string;
+  model?: string;
+  args?: string[];
+  env?: Record<string, string>;
   interactive?: boolean;
   logger?: Logger;
 }
@@ -11,6 +15,17 @@ export interface ClaudeAdapterOptions {
 export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapter {
   const interactive = options?.interactive ?? false;
   const logger = options?.logger ?? noopLogger;
+  const command = options?.command ?? "claude";
+  const configuredArgs = options?.args ?? [];
+  const configuredEnv = options?.env ?? {};
+  if (options?.model) {
+    logger.warn(
+      "Claude model config is currently ignored until Claude CLI model support is verified",
+      {
+        model: options.model,
+      },
+    );
+  }
 
   return {
     spawn(prompt: string, opts?: AgentSpawnOptions): AgentSession {
@@ -23,19 +38,20 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
       ];
 
       const args = interactive
-        ? [...baseArgs, "--input-format", "stream-json"]
-        : ["--print", ...baseArgs, prompt];
+        ? [...baseArgs, ...configuredArgs, "--input-format", "stream-json"]
+        : ["--print", ...baseArgs, ...configuredArgs, prompt];
 
       logger.debug("Spawning claude process", {
         interactive,
         cwd: opts?.cwd,
         argCount: args.length,
+        command,
       });
 
-      const proc: ChildProcess = spawn("claude", args, {
+      const proc: ChildProcess = spawn(command, args, {
         stdio: ["pipe", "pipe", "pipe"],
         cwd: opts?.cwd,
-        env: opts?.env ? { ...process.env, ...opts.env } : undefined,
+        env: { ...process.env, ...configuredEnv, ...(opts?.env ?? {}) },
       });
 
       const pid = proc.pid;
