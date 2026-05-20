@@ -37,10 +37,12 @@ describe("pi RPC adapter", () => {
   test("sends prompt, steer, and abort commands", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
     const logPath = path.join(dir, "commands.jsonl");
+    const argvPath = path.join(dir, "argv.json");
     const scriptPath = path.join(dir, "fake-pi.js");
     fs.writeFileSync(
       scriptPath,
       `import fs from "node:fs";
+fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(2)));
 process.stdin.on("data", (chunk) => {
   fs.appendFileSync(${JSON.stringify(logPath)}, chunk);
 });
@@ -59,6 +61,12 @@ setTimeout(() => {}, 10000);
     session.abort();
     await session.exited;
 
+    expect(JSON.parse(fs.readFileSync(argvPath, "utf-8"))).toEqual([
+      "--no-session",
+      "--mode",
+      "rpc",
+    ]);
+
     const commands = fs
       .readFileSync(logPath, "utf-8")
       .trim()
@@ -73,6 +81,32 @@ setTimeout(() => {}, 10000);
 
   test("rejects --mode in args", () => {
     expect(() => createPiRpcAdapter({ args: ["--mode", "json"] })).toThrow("does not allow");
+  });
+
+  test("does not duplicate --no-session from configured args", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
+    const argvPath = path.join(dir, "argv.json");
+    const scriptPath = path.join(dir, "fake-pi.js");
+    fs.writeFileSync(
+      scriptPath,
+      `import fs from "node:fs";
+fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(2)));
+process.stdin.resume();
+setTimeout(() => process.exit(0), 25);
+`,
+    );
+
+    const session = createPiRpcAdapter({
+      command: process.execPath,
+      args: [scriptPath, "--no-session"],
+    }).spawn("hello");
+    await session.exited;
+
+    expect(JSON.parse(fs.readFileSync(argvPath, "utf-8"))).toEqual([
+      "--no-session",
+      "--mode",
+      "rpc",
+    ]);
   });
 });
 

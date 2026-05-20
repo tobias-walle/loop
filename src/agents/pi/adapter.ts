@@ -23,9 +23,17 @@ export function createPiRpcAdapter(options: PiRpcAdapterOptions = {}): AgentAdap
     throw new Error('pi adapter does not allow "--mode" in args because it must enforce RPC mode');
   }
 
+  const sessionArgs = configuredArgs.includes("--no-session") ? [] : ["--no-session"];
+
   return {
     spawn(prompt: string, opts?: AgentSpawnOptions): AgentSession {
-      const args = [...(model ? ["--model", model] : []), ...configuredArgs, "--mode", "rpc"];
+      const args = [
+        ...(model ? ["--model", model] : []),
+        ...configuredArgs,
+        ...sessionArgs,
+        "--mode",
+        "rpc",
+      ];
       logger.debug("Spawning pi RPC process", { command, cwd: opts?.cwd, argCount: args.length });
 
       const proc: ChildProcess = spawn(command, args, {
