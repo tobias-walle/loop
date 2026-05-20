@@ -55,7 +55,7 @@ function handlePreTuiCommand(config: LoopConfig): boolean {
 function checkSandbox(): void {
   if (!isSandboxed()) {
     console.error(
-      `${boldRed("\n  ⚠️  SECURITY WARNING\n")}\n  loop gives coding agents tool access to your project and shell.\n  Use it only in a container or trusted sandbox.\n\n${dim("    - Docker / Podman\n")}${dim("    - Devcontainers\n")}${dim("    - GitHub Codespaces\n")}${dim("    - Kubernetes pods\n")}`,
+      `${boldRed("\n  ▲ SECURITY WARNING\n")}\n  loop gives coding agents tool access to your project and shell.\n  Use it only in a container or trusted sandbox.\n\n${dim("    - Docker / Podman\n")}${dim("    - Devcontainers\n")}${dim("    - GitHub Codespaces\n")}${dim("    - Kubernetes pods\n")}`,
     );
     process.exit(1);
   }
@@ -146,6 +146,7 @@ async function main(): Promise<void> {
         step: stepIndex + 1,
         totalSteps: state.totalSteps,
         costUsd: state.costUsd,
+        usage: state.usage,
       });
     },
     onStepStart: (stepIndex, step, iteration) => {
@@ -166,6 +167,7 @@ async function main(): Promise<void> {
         iteration: isLoop ? iteration : undefined,
         max: maxDisplay,
         costUsd: runner.getState().costUsd,
+        usage: runner.getState().usage,
       });
     },
     onStepComplete: (stepIndex, result) => {
@@ -182,6 +184,7 @@ async function main(): Promise<void> {
         step: stepIndex + 1,
         totalSteps: config.steps.length,
         costUsd: runner.getState().costUsd,
+        usage: runner.getState().usage,
       });
     },
   });

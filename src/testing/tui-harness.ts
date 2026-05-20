@@ -97,16 +97,27 @@ async function main(): Promise<void> {
         step: stepIndex + 1,
         totalSteps: state.totalSteps,
         costUsd: state.costUsd,
+        usage: state.usage,
       });
     },
     onStepStart: (stepIndex, step) => {
       const task = step.type === "task" ? step.task : step.tasks.join(", ");
       tui.showStepHeader(stepIndex + 1, steps.length, task);
-      tui.updateStatus({ step: stepIndex + 1, totalSteps: steps.length });
+      tui.updateStatus({
+        step: stepIndex + 1,
+        totalSteps: steps.length,
+        usage: runner.getState().usage,
+      });
     },
     onStepComplete: (_stepIndex, result) => {
       if (result.exitReason !== "error") {
-        tui.showCompletion(result.exitReason, result.durationMs, result.iterations, result.costUsd);
+        tui.showCompletion(
+          result.exitReason,
+          result.durationMs,
+          result.iterations,
+          result.costUsd,
+          result.usage,
+        );
       }
     },
   });

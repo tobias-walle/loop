@@ -3,10 +3,13 @@ import type { AgentEvent, TokenUsage } from "../types.js";
 export type PiEventState = {
   text: string;
   sessionStarted: boolean;
+  model?: string;
+  sessionId: string;
+  tools: string[];
 };
 
 export function createPiEventState(): PiEventState {
-  return { text: "", sessionStarted: false };
+  return { text: "", sessionStarted: false, sessionId: "pi-rpc", tools: [] };
 }
 
 export function mapPiEvent(raw: unknown, state: PiEventState): AgentEvent[] {
@@ -17,10 +20,15 @@ export function mapPiEvent(raw: unknown, state: PiEventState): AgentEvent[] {
       const model = stringAt(raw, ["model"]) ?? stringAt(raw, ["agent", "model"]) ?? "pi";
       const sessionId =
         stringAt(raw, ["sessionId"]) ?? stringAt(raw, ["session", "id"]) ?? "pi-rpc";
-      if (state.sessionStarted) return [];
+      const tools = arrayOfStrings(raw.tools);
       state.sessionStarted = true;
-      return [{ type: "session_start", model, sessionId, tools: arrayOfStrings(raw.tools) }];
+      state.model = model;
+      state.sessionId = sessionId;
+      state.tools = tools;
+      return [{ type: "session_start", model, sessionId, tools }];
     }
+    case "message_start":
+      return mapMessageStart(raw, state);
     case "response":
       if (raw.success === false) {
         return [{ type: "error", message: stringAt(raw, ["error"]) ?? "pi RPC command failed" }];
@@ -71,6 +79,14 @@ export function mapPiEvent(raw: unknown, state: PiEventState): AgentEvent[] {
     default:
       return [{ type: "unknown", eventType: type, raw }];
   }
+}
+
+function mapMessageStart(raw: Record<string, unknown>, state: PiEventState): AgentEvent[] {
+  const model = stringAt(raw, ["message", "model"]) ?? stringAt(raw, ["model"]);
+  if (!model || model === state.model) return [];
+  state.sessionStarted = true;
+  state.model = model;
+  return [{ type: "session_start", model, sessionId: state.sessionId, tools: state.tools }];
 }
 
 function mapMessageUpdate(raw: Record<string, unknown>, state: PiEventState): AgentEvent[] {

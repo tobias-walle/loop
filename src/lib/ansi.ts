@@ -1,7 +1,6 @@
 // Low-level ANSI primitives
 export const ESC = "\x1b[";
 export const RESET = `${ESC}0m`;
-export const ITALIC = `${ESC}3m`;
 
 // Bracketed paste mode markers
 export const PASTE_START = "\x1b[200~";
@@ -54,18 +53,10 @@ export function boldCyan(text: string): string {
   return `${ESC}1;36m${text}${RESET}`;
 }
 
-export function boldYellow(text: string): string {
-  return `${ESC}1;33m${text}${RESET}`;
-}
-
 export function boldGreen(text: string): string {
   return `${ESC}1;32m${text}${RESET}`;
 }
 
 export function boldRed(text: string): string {
   return `${ESC}1;31m${text}${RESET}`;
-}
-
-export function boldMagenta(text: string): string {
-  return `${ESC}1;35m${text}${RESET}`;
 }

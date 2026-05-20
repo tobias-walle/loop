@@ -1,6 +1,7 @@
 import { type Component, type Focusable, truncateToWidth } from "@mariozechner/pi-tui";
-import { cyan, dim, dimGray, green, yellow } from "../../lib/ansi.js";
-import { formatDuration } from "../formatters.js";
+import { cyan, dim, dimGray, green } from "../../lib/ansi.js";
+import type { TokenUsage } from "../../lib/types.js";
+import { formatDuration, formatTokens } from "../formatters.js";
 import { InputLine } from "./input-line.js";
 
 interface StatusInfo {
@@ -10,13 +11,15 @@ interface StatusInfo {
   max?: number;
   costUsd?: number;
   durationMs?: number;
+  usage?: TokenUsage;
 }
 
 /**
- * Three-line bottom overlay:
+ * Bottom overlay:
  *   Line 1: separator (─── full width)
  *   Line 2: input field (delegated to InputLine)
- *   Line 3: separator + status footer
+ *   Line 3: separator
+ *   Line 4: cumulative run stats
  */
 export class StatusBar implements Component, Focusable {
   focused = false;
@@ -78,25 +81,20 @@ export class StatusBar implements Component, Focusable {
     const parts: string[] = [];
     const s = this.status;
 
-    if (s.step != null && s.totalSteps != null) {
-      parts.push(cyan(`step ${s.step}/${s.totalSteps}`));
-    }
-
-    if (s.iteration != null) {
-      const iterStr = s.max != null ? `iter ${s.iteration}/${s.max}` : `iter ${s.iteration}`;
-      parts.push(yellow(iterStr));
+    const durationMs = this.startTime != null ? Date.now() - this.startTime : s.durationMs;
+    if (durationMs != null) {
+      parts.push(dim(formatDuration(durationMs)));
     }
 
     if (s.costUsd != null) {
       parts.push(green(`$${s.costUsd.toFixed(2)}`));
     }
 
-    const durationMs = this.startTime != null ? Date.now() - this.startTime : s.durationMs;
-    if (durationMs != null) {
-      parts.push(dim(formatDuration(durationMs)));
+    if (s.usage != null) {
+      parts.push(cyan(formatTokens(s.usage)));
     }
 
-    const sep = dim(" \u00b7 ");
+    const sep = dim(" · ");
     const text = parts.length > 0 ? parts.join(sep) : "";
     return truncateToWidth(text, width, "", true);
   }

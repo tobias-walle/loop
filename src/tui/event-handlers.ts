@@ -36,14 +36,25 @@ export function handleTextDelta(
   const existing = state.textBlocks.get(key);
   if (existing) {
     existing.accumulated += event.text;
-    existing.textRef.setText(`💬 ${existing.accumulated.trimStart()}`);
+    existing.textRef.setText(formatAssistantText(existing.accumulated));
   } else {
     const accumulated = event.text;
-    const textRef = new Text(`💬 ${accumulated.trimStart()}`, 0, 0);
+    const textRef = new Text(formatAssistantText(accumulated), 0, 0);
     container.addChild(textRef);
     state.textBlocks.set(key, { textRef, accumulated });
   }
   requestRender();
+}
+
+function formatAssistantText(text: string): string {
+  const lines = text.trimStart().split("\n");
+  return lines
+    .map((line, index) => {
+      if (index === 0) return `${dim("›")} ${line}`;
+      if (line.length === 0) return "";
+      return `  ${line}`;
+    })
+    .join("\n");
 }
 
 export function handleToolStart(
@@ -54,12 +65,12 @@ export function handleToolStart(
 ): void {
   if (event.tool === "Task" || event.tool === "Agent") {
     const container = containerForEvent(event.parentToolUseId);
-    const description = String(event.input?.description ?? "");
+    const description = String(event.input?.description ?? event.input?.task ?? "");
     const model = event.input?.model;
-    const modelSuffix = typeof model === "string" && model ? ` (${model})` : "";
+    const modelSuffix = typeof model === "string" && model ? ` · ${model}` : "";
     const color = nextAgentColor();
     const subBox = new PipeBox(color);
-    subBox.setHeader(dim(`${event.tool}: ${description}${modelSuffix}`));
+    subBox.setHeader(dim(`agent  ${description}${modelSuffix}`));
     container.addChild(subBox);
     state.toolIdToContainer.set(event.toolId, subBox);
     state.toolIdToParentContainer.set(event.toolId, container);
@@ -83,7 +94,7 @@ export function handleTaskStarted(
     const container = currentContainer();
     const color = nextAgentColor();
     const subBox = new PipeBox(color);
-    subBox.setHeader(dim(`Agent: ${event.description}`));
+    subBox.setHeader(dim(`agent  ${event.description}`));
     container.addChild(subBox);
     state.toolIdToContainer.set(event.toolUseId, subBox);
     state.toolIdToParentContainer.set(event.toolUseId, container);
@@ -104,11 +115,13 @@ export function handleTaskDone(
   const durationSec = (event.durationMs / 1000).toFixed(1);
   const meta: string[] = [`${durationSec}s`];
   if (event.totalTokens != null) meta.push(`${formatTokenCount(event.totalTokens)} tokens`);
-  const footerText = dim(`${event.status}: ${event.summary} (${meta.join(" · ")})`);
+  const status = event.status.toLowerCase();
+  const symbol = status.includes("fail") || status.includes("error") ? "✕" : "✓";
+  const footerText = dim(`${symbol} ${status} ${event.summary} · ${meta.join(" · ")}`);
   if (mapped instanceof PipeBox) {
     mapped.setFooter(footerText);
   } else {
-    parent.addChild(new Text(dim(`└ ${footerText}`), 0, 0));
+    parent.addChild(new Text(`${dim("└")} ${footerText}`, 0, 0));
   }
   requestRender();
 }

@@ -4,6 +4,7 @@ import { execSync } from "node:child_process";
 const SESSION = "loop-input-test";
 const HARNESS = "src/testing/tui-harness.ts";
 const WAIT_MS = 15_000;
+const STEP_HEADER = "[step 01/01";
 
 function tmux(...args: string[]): string {
   return execSync(`tmux ${args.join(" ")}`, { encoding: "utf-8", timeout: 5000 }).trim();
@@ -107,19 +108,19 @@ describe("InputLine integration (tmux)", () => {
   });
 
   it("renders the TUI with input area and status bar", async () => {
-    const content = await waitForContent("step 1/1");
+    const content = await waitForContent(STEP_HEADER);
     expect(content).toContain("Test task");
     expect(content).toContain("─");
   });
 
   it("accepts typed characters and shows them in the input line", async () => {
-    await waitForContent("step 1/1");
+    await waitForContent(STEP_HEADER);
     sendLiteral("hello");
     await expectInput("hello");
   });
 
   it("clears input with Escape", async () => {
-    await waitForContent("step 1/1");
+    await waitForContent(STEP_HEADER);
     sendLiteral("some text");
     await expectInput("some text");
     sendKeys("Escape");
@@ -127,7 +128,7 @@ describe("InputLine integration (tmux)", () => {
   });
 
   it("navigates history with arrow up/down", async () => {
-    await waitForContent("step 1/1");
+    await waitForContent(STEP_HEADER);
 
     sendLiteral("first message");
     sendKeys("Enter");
@@ -151,7 +152,7 @@ describe("InputLine integration (tmux)", () => {
   });
 
   it("ctrl+c clears input when non-empty", async () => {
-    await waitForContent("step 1/1");
+    await waitForContent(STEP_HEADER);
 
     sendLiteral("text to clear");
     await expectInput("text to clear");
@@ -161,7 +162,7 @@ describe("InputLine integration (tmux)", () => {
   });
 
   it("ctrl+c on empty input interrupts the process", async () => {
-    await waitForContent("step 1/1");
+    await waitForContent(STEP_HEADER);
 
     sendKeys("C-c");
     await sleep(500);
@@ -170,8 +171,8 @@ describe("InputLine integration (tmux)", () => {
     let alive = true;
     try {
       const content = capture();
-      // If the harness exited, tmux shows blank or shell prompt — no more "step 1/1"
-      alive = content.includes("step 1/1");
+      // If the harness exited, tmux shows blank or shell prompt, no more step header.
+      alive = content.includes(STEP_HEADER);
     } catch {
       alive = false;
     }
@@ -179,14 +180,14 @@ describe("InputLine integration (tmux)", () => {
   });
 
   it("supports pasting text", async () => {
-    await waitForContent("step 1/1");
+    await waitForContent(STEP_HEADER);
 
     sendLiteral("pasted content");
     await expectInput("pasted content");
   });
 
   it("moves cursor with arrow keys and inserts mid-text", async () => {
-    await waitForContent("step 1/1");
+    await waitForContent(STEP_HEADER);
 
     sendLiteral("ac");
     await expectInput("ac");
@@ -198,7 +199,7 @@ describe("InputLine integration (tmux)", () => {
   });
 
   it("handles Home and End keys", async () => {
-    await waitForContent("step 1/1");
+    await waitForContent(STEP_HEADER);
 
     sendLiteral("world");
     await expectInput("world");
@@ -210,7 +211,7 @@ describe("InputLine integration (tmux)", () => {
   });
 
   it("handles backspace and delete", async () => {
-    await waitForContent("step 1/1");
+    await waitForContent(STEP_HEADER);
 
     sendLiteral("abcd");
     await expectInput("abcd");

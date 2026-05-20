@@ -117,6 +117,17 @@ describe("pi event mapping", () => {
     ]);
   });
 
+  test("updates session model from message_start", () => {
+    const state = createPiEventState();
+    expect(mapPiEvent({ type: "agent_start" }, state)).toEqual([
+      { type: "session_start", model: "pi", sessionId: "pi-rpc", tools: [] },
+    ]);
+    expect(mapPiEvent({ type: "message_start", message: { model: "gpt-5.5" } }, state)).toEqual([
+      { type: "session_start", model: "gpt-5.5", sessionId: "pi-rpc", tools: [] },
+    ]);
+    expect(mapPiEvent({ type: "message_start", message: { model: "gpt-5.5" } }, state)).toEqual([]);
+  });
+
   test("maps text deltas and text end", () => {
     const state = createPiEventState();
     expect(

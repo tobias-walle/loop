@@ -20,6 +20,11 @@ function renderChild(container: Container, index: number): string {
   return container.children[index].render(200).join("\n");
 }
 
+function stripAnsi(text: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape stripping requires matching control chars
+  return text.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
 describe("createEventRouter", () => {
   test("text_delta creates and updates a text component", () => {
     const { root, router } = setup();
@@ -33,6 +38,24 @@ describe("createEventRouter", () => {
 
     expect(root.children).toHaveLength(1);
     expect(router.state.textBlocks.get(ROOT_KEY)?.accumulated).toBe("Hello world");
+  });
+
+  test("text_delta indents follow-up response lines", () => {
+    const { root, router } = setup();
+
+    router.handleEvent(
+      {
+        type: "text_delta",
+        text: "Added `REPORT.md`.\n\nNote: unrelated changes remain.",
+        parentToolUseId: null,
+      },
+      0,
+    );
+
+    const rendered = renderChild(root, 0);
+    expect(rendered).toContain("›");
+    expect(rendered).toContain("Added `REPORT.md`.");
+    expect(rendered).toContain("\n  Note: unrelated changes remain.");
   });
 
   test("text_done clears the text reference", () => {
@@ -75,7 +98,8 @@ describe("createEventRouter", () => {
 
     expect(root.children).toHaveLength(1);
     const rendered = renderChild(root, 0);
-    expect(rendered).toContain("Read");
+    expect(rendered).toContain("◇");
+    expect(rendered).toContain("read");
     expect(rendered).toContain("src/index.ts");
   });
 
@@ -148,7 +172,7 @@ describe("createEventRouter", () => {
     expect(root.children).toHaveLength(1);
     expect(root.children[0]).toBeInstanceOf(PipeBox);
     const rendered = renderChild(root, 0);
-    expect(rendered).toContain("Agent: Review code");
+    expect(rendered).toContain("agent  Review code");
     expect(rendered).toContain("claude-haiku-4-5");
   });
 
@@ -265,7 +289,8 @@ describe("createEventRouter", () => {
 
     expect(root.children).toHaveLength(1);
     const rendered = renderChild(root, 0);
-    expect(rendered).toContain("Retry");
+    expect(rendered).toContain("↻");
+    expect(rendered).toContain("retry");
     expect(rendered).toContain("1/10");
   });
 
@@ -276,7 +301,8 @@ describe("createEventRouter", () => {
 
     expect(root.children).toHaveLength(1);
     const rendered = renderChild(root, 0);
-    expect(rendered).toContain("Error");
+    expect(rendered).toContain("✕");
+    expect(rendered).toContain("error");
     expect(rendered).toContain("Something broke");
   });
 
@@ -285,12 +311,16 @@ describe("createEventRouter", () => {
 
     router.showStepHeader(1, 3, "Create an about page");
 
-    // 1 blank line + header + thinking indicator = 3
-    expect(root.children).toHaveLength(3);
-    const rendered = renderChild(root, 1);
-    expect(rendered).toContain("Step 1/3");
-    expect(rendered).toContain("Create an about page");
-    expect(root.children[2]).toBeInstanceOf(ThinkingIndicator);
+    // 1 blank line + 2 header lines + blank line + waiting indicator = 5
+    expect(root.children).toHaveLength(5);
+    const meta = renderChild(root, 1);
+    const task = renderChild(root, 2);
+    expect(meta).toContain("[step 01/03]");
+    expect(task).not.toContain("•");
+    expect(task).toContain("Create an about page");
+    expect(renderChild(root, 3).trim()).toBe("");
+    expect(root.children[4]).toBeInstanceOf(ThinkingIndicator);
+    expect(renderChild(root, 4)).toContain("waiting");
   });
 
   test("showStepHeader adds gap before second header", () => {
@@ -299,11 +329,8 @@ describe("createEventRouter", () => {
     router.showStepHeader(1, 3, "First");
     router.showStepHeader(2, 3, "Second");
 
-    // First: blank + header + thinking (3) + Second: blank + header + thinking (3) = 6
-    // (first thinking indicator is removed when showStepHeader resets, but it was on root so stays)
-    // Actually: showStepHeader clears thinkingIndicator state but doesn't remove the first
-    // because the second showStepHeader calls removeThinkingIndicator first.
-    expect(root.children).toHaveLength(5);
+    // First header remains, first spinner is removed, then the second header and spinner are added.
+    expect(root.children).toHaveLength(9);
   });
 
   test("showStepHeader with iteration info", () => {
@@ -312,7 +339,22 @@ describe("createEventRouter", () => {
     router.showStepHeader(2, 3, "Review code", 3, 10);
 
     const rendered = renderChild(root, 1);
-    expect(rendered).toContain("#3/10");
+    expect(rendered).toContain("iter 03/10");
+  });
+
+  test("session_start updates the active step header with model info", () => {
+    const { root, router, getRenderCount } = setup();
+
+    router.showStepHeader(1, 2, "Write code");
+    router.handleEvent({ type: "session_start", model: "pi", sessionId: "s1", tools: ["Bash"] }, 0);
+    router.handleEvent(
+      { type: "session_start", model: "gpt-5.5", sessionId: "s1", tools: ["Bash"] },
+      0,
+    );
+
+    const rendered = renderChild(root, 1);
+    expect(rendered).toContain("[step 01/02 · gpt-5.5]");
+    expect(getRenderCount()).toBeGreaterThan(1);
   });
 
   test("thinking indicator is removed on first agent output and re-shown after text_done", () => {
@@ -320,33 +362,39 @@ describe("createEventRouter", () => {
 
     router.showStepHeader(1, 1, "Do stuff");
 
-    // spacer + header + thinking = 3
-    expect(root.children).toHaveLength(3);
+    // spacer + 2 header lines + blank line + waiting indicator = 5
+    expect(root.children).toHaveLength(5);
     expect(router.state.thinkingIndicators.get(ROOT_KEY)).toBeDefined();
 
     router.handleEvent({ type: "text_delta", text: "Hi", parentToolUseId: null }, 0);
 
-    // thinking removed, text_delta added: spacer + header + text = 3
-    expect(root.children).toHaveLength(3);
+    // waiting indicator is removed while visible text is streaming
+    expect(root.children).toHaveLength(5);
     expect(router.state.thinkingIndicators.get(ROOT_KEY)).toBeUndefined();
     expect(root.children.some((c) => c instanceof ThinkingIndicator)).toBe(false);
 
-    // After text_done, thinking indicator re-appears
+    // After text_done, a thinking indicator re-appears while the response can continue.
     router.handleEvent({ type: "text_done", text: "Hi", parentToolUseId: null }, 0);
-    expect(root.children).toHaveLength(4); // spacer + header + text + thinking
+    expect(root.children).toHaveLength(6); // spacer + header lines + blank line + text + thinking
     expect(router.state.thinkingIndicators.get(ROOT_KEY)).toBeDefined();
     expect(root.children.some((c) => c instanceof ThinkingIndicator)).toBe(true);
+    expect(renderChild(root, 5)).toContain("thinking");
   });
 
   test("showCompletion adds marker", () => {
     const { root, router } = setup();
 
     router.showCompletion("done", 83000);
-    // blank line + completion text = 2 children
-    expect(root.children).toHaveLength(2);
+    expect(root.children).toHaveLength(4);
+    expect(renderChild(root, 0).trim()).toBe("");
     const rendered = renderChild(root, 1);
-    expect(rendered).toContain("Done");
+    expect(rendered).toContain("✓");
+    expect(rendered).toContain("done");
     expect(rendered).toContain("1m 23s");
+    expect(renderChild(root, 2).trim()).toBe("");
+    const separator = stripAnsi(renderChild(root, 3));
+    expect(separator).toContain("─");
+    expect(separator.trim()).toHaveLength(200);
   });
 
   test("showCompletion loop_done with iterations", () => {
@@ -354,7 +402,8 @@ describe("createEventRouter", () => {
 
     router.showCompletion("loop_done", 221000, 2);
     const rendered = renderChild(root, 1);
-    expect(rendered).toContain("LOOP_DONE");
+    expect(rendered).toContain("✓");
+    expect(rendered).toContain("done");
     expect(rendered).toContain("2 iterations");
   });
 
@@ -363,8 +412,32 @@ describe("createEventRouter", () => {
 
     router.showCompletion("max_reached", 60000, 10);
     const rendered = renderChild(root, 1);
-    expect(rendered).toContain("MAX reached");
+    expect(rendered).toContain("▲");
+    expect(rendered).toContain("max");
     expect(rendered).toContain("10 iterations");
+  });
+
+  test("showRunSummary keeps balanced separator spacing before loop summary", () => {
+    const { root, router } = setup();
+
+    router.showCompletion("done", 1000);
+    router.showRunSummary({
+      totalCostUsd: 0.01,
+      totalDurationMs: 1000,
+      totalUsage: {
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      },
+    });
+
+    expect(root.children).toHaveLength(6);
+    expect(renderChild(root, 2).trim()).toBe("");
+    expect(renderChild(root, 3)).toContain("─");
+    expect(renderChild(root, 4).trim()).toBe("");
+    expect(renderChild(root, 5)).toContain("✓");
+    expect(renderChild(root, 5)).toContain("loop");
   });
 
   test("session_start and done events produce no output", () => {
@@ -572,14 +645,14 @@ describe("createEventRouter", () => {
     const lines = plainOutput.split("\n").filter((l) => l.trim());
 
     // All three agent headers should appear at root level (no │ prefix)
-    const agentHeaders = lines.filter((l) => l.includes("┌ Agent:"));
+    const agentHeaders = lines.filter((l) => l.includes("┌ agent"));
     expect(agentHeaders).toHaveLength(3);
     for (const header of agentHeaders) {
       expect(header).not.toMatch(/^│/);
     }
 
     // All three completion summaries should be at root level
-    const summaries = lines.filter((l) => l.includes("└ completed:"));
+    const summaries = lines.filter((l) => l.includes("└ ✓ completed"));
     expect(summaries).toHaveLength(3);
     for (const summary of summaries) {
       expect(summary).not.toMatch(/^│/);
@@ -588,8 +661,8 @@ describe("createEventRouter", () => {
     expect(summaries.some((s) => s.includes("Code quality review"))).toBe(true);
     expect(summaries.some((s) => s.includes("Efficiency review"))).toBe(true);
 
-    // Inner tool calls (Read, Glob) should be exactly one PipeBox deep
-    const toolLines = lines.filter((l) => l.includes("Read") || l.includes("Glob"));
+    // Inner tool calls should be exactly one PipeBox deep
+    const toolLines = lines.filter((l) => l.includes("read") || l.includes("glob"));
     expect(toolLines.length).toBeGreaterThanOrEqual(4); // 1 + 2 + 1 across three agents
     for (const line of toolLines) {
       expect(line).toMatch(/^│ /); // indented
@@ -597,7 +670,7 @@ describe("createEventRouter", () => {
     }
 
     // Text from each subagent should be inside its PipeBox (one level deep)
-    const textLines = lines.filter((l) => l.includes("💬"));
+    const textLines = lines.filter((l) => l.includes("›"));
     // 3 subagent texts + 2 root-level texts = at least 3 indented
     const indentedTexts = textLines.filter((l) => l.startsWith("│ "));
     expect(indentedTexts.length).toBeGreaterThanOrEqual(3);
@@ -610,7 +683,8 @@ describe("createEventRouter", () => {
 
     expect(root.children).toHaveLength(1);
     const rendered = renderChild(root, 0);
-    expect(rendered).toContain("👤");
+    expect(rendered).toContain("›");
+    expect(rendered).toContain("user");
     expect(rendered).toContain("fix the CSS");
   });
 });

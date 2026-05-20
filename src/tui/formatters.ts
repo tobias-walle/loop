@@ -2,9 +2,7 @@ import {
   bold,
   boldCyan,
   boldGreen,
-  boldMagenta,
   boldRed,
-  boldYellow,
   cyan,
   dim,
   green,
@@ -12,6 +10,9 @@ import {
   yellow,
 } from "../lib/ansi.js";
 import type { RunSummary, TokenUsage } from "../lib/types.js";
+
+const TOOL_LABEL_WIDTH = 6;
+const STATUS_LABEL_WIDTH = 6;
 
 export function formatToolLine(
   tool: string,
@@ -21,46 +22,101 @@ export function formatToolLine(
   switch (tool) {
     case "Read": {
       const p = (input.file_path ?? input.path ?? "") as string;
-      return `${yellow("⚙")} ${boldYellow("Read")} ${dim(truncate(p, maxWidth - 12))}`;
+      return formatToolEvent("◇", "read", p, maxWidth, yellow);
     }
     case "Write": {
       const p = (input.file_path ?? input.path ?? "") as string;
-      return `${green("⚙")} ${boldGreen("Write")} ${dim(truncate(p, maxWidth - 13))}`;
+      return formatToolEvent("✎", "write", p, maxWidth, green);
     }
     case "Edit": {
       const p = (input.file_path ?? input.path ?? "") as string;
-      return `${cyan("⚙")} ${boldCyan("Edit")} ${dim(truncate(p, maxWidth - 12))}`;
+      return formatToolEvent("✎", "edit", p, maxWidth, cyan);
     }
     case "Bash": {
       const cmd = (input.command ?? "") as string;
-      return `${magenta("⚙")} ${boldMagenta("Bash")} ${dim(truncate(cmd, maxWidth - 12))}`;
+      return formatToolEvent("◆", "bash", cmd, maxWidth, magenta);
     }
     case "Search":
     case "Grep": {
       const query = (input.query ?? input.pattern ?? "") as string;
       const p = (input.path ?? input.directory ?? "") as string;
       const pathSuffix = p ? ` in ${p}` : "";
-      return `${yellow("⚙")} ${boldYellow(tool)} ${dim(truncate(`"${query}"${pathSuffix}`, maxWidth - tool.length - 5))}`;
+      return formatToolEvent("⌕", tool.toLowerCase(), `"${query}"${pathSuffix}`, maxWidth, yellow);
     }
     case "Task":
     case "Agent": {
       const task = (input.task ?? input.description ?? "") as string;
-      return `${boldMagenta("⚙ Agent:")} ${dim(truncate(task, maxWidth - 12))}`;
+      return formatToolEvent("◈", "agent", task, maxWidth, magenta);
     }
     default: {
       const firstString = Object.values(input).find((v) => typeof v === "string") as
         | string
         | undefined;
-      const suffix = firstString ? `: ${firstString}` : "";
-      return `${yellow("⚙")} ${boldYellow(tool)}${dim(truncate(suffix, maxWidth - tool.length - 5))}`;
+      const suffix = firstString ? firstString : "";
+      return formatToolEvent("◇", tool.toLowerCase(), suffix, maxWidth, yellow);
     }
   }
 }
 
+function formatToolEvent(
+  symbol: string,
+  label: string,
+  payload: string,
+  maxWidth: number,
+  colorize: (text: string) => string,
+): string {
+  const labelText = label.padEnd(TOOL_LABEL_WIDTH);
+  const prefixWidth = 2 + labelText.length + 1;
+  const payloadWidth = Math.max(0, maxWidth - prefixWidth);
+  return `${colorize(symbol)} ${colorize(labelText)} ${dim(truncate(payload, payloadWidth))}`;
+}
+
+function formatStatusLine(
+  symbol: string,
+  label: string,
+  details: string,
+  colorize: (text: string) => string,
+): string {
+  const labelText = label.padEnd(STATUS_LABEL_WIDTH);
+  return details
+    ? `${colorize(symbol)} ${colorize(labelText)} ${details}`
+    : `${colorize(symbol)} ${colorize(labelText)}`;
+}
+
 function truncate(text: string, max: number): string {
+  if (max <= 0) return "";
   if (max <= 3) return text.slice(0, max);
   if (text.length <= max) return text;
   return `${text.slice(0, max - 3)}...`;
+}
+
+function padNumber(value: number, width: number): string {
+  return String(value).padStart(width, "0");
+}
+
+export function formatStepHeaderLines(
+  step: number,
+  totalSteps: number,
+  task: string,
+  iteration?: number,
+  max?: number,
+  model?: string,
+): [string, string] {
+  const stepWidth = Math.max(2, String(totalSteps).length);
+  const parts = [`step ${padNumber(step, stepWidth)}/${padNumber(totalSteps, stepWidth)}`];
+
+  if (iteration != null) {
+    const iterWidth = Math.max(2, String(max ?? iteration).length);
+    const iter =
+      max != null
+        ? `iter ${padNumber(iteration, iterWidth)}/${padNumber(max, iterWidth)}`
+        : `iter ${padNumber(iteration, iterWidth)}`;
+    parts.push(iter);
+  }
+
+  if (model) parts.push(model);
+
+  return [boldCyan(`[${parts.join(" · ")}]`), bold(task)];
 }
 
 export function formatStepHeader(
@@ -71,16 +127,7 @@ export function formatStepHeader(
   max?: number,
   model?: string,
 ): string {
-  const stepLabel = boldCyan(`Step ${step}/${totalSteps}`);
-  let iterLabel = "";
-  if (iteration != null) {
-    iterLabel = max != null ? ` #${iteration}/${max}` : ` #${iteration}`;
-    iterLabel = dim(iterLabel);
-  }
-  const taskLabel = bold(task);
-  const modelLabel = model ? dim(` (${model})`) : "";
-  const dash = dim("───");
-  return `${dash} ${stepLabel}${iterLabel} - ${taskLabel}${modelLabel} ${dash}`;
+  return formatStepHeaderLines(step, totalSteps, task, iteration, max, model).join("\n");
 }
 
 export function formatDuration(ms: number): string {
@@ -131,11 +178,11 @@ export function formatCompletion(
 
   switch (type) {
     case "done":
-      return `${green("✅ Done")} ${dim("(")}${details}${dim(")")}`;
+      return formatStatusLine("✓", "done", details, green);
     case "loop_done":
-      return `${boldGreen("🏁 LOOP_DONE")} ${dim("(")}${details}${dim(")")}`;
+      return formatStatusLine("✓", "done", details, boldGreen);
     case "max_reached":
-      return `${yellow("⚠️ MAX reached")} ${dim("(")}${details}${dim(")")}`;
+      return formatStatusLine("▲", "max", details, yellow);
   }
 }
 
@@ -146,17 +193,17 @@ export function formatRunSummary(summary: RunSummary): string {
     green(`$${summary.totalCostUsd.toFixed(2)}`),
     cyan(formatTokens(summary.totalUsage)),
   ];
-  return `${dim("Total:")} ${parts.join(sep)}`;
+  return formatStatusLine("✓", "loop", parts.join(sep), magenta);
 }
 
 export function formatRetry(attempt: number, maxRetries: number, error: string): string {
-  return dim(`↻ Retry ${attempt}/${maxRetries} (${error})`);
+  return formatStatusLine("↻", "retry", dim(`${attempt}/${maxRetries} · ${error}`), dim);
 }
 
 export function formatError(message: string): string {
-  return boldRed(`✗ Error: ${message}`);
+  return formatStatusLine("✕", "error", message, boldRed);
 }
 
 export function formatUserMessage(text: string): string {
-  return cyan(`👤 ${text}`);
+  return `${dim("›")} ${cyan("user".padEnd(STATUS_LABEL_WIDTH))} ${text}`;
 }

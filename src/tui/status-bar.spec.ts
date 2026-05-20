@@ -25,37 +25,31 @@ describe("StatusBar", () => {
     it("has separators above and below input, footer at bottom", () => {
       const bar = new StatusBar();
       bar.focused = true;
-      bar.setStatus({ step: 1, totalSteps: 2, costUsd: 0.05, durationMs: 10000 });
+      bar.setStatus({
+        step: 1,
+        totalSteps: 2,
+        costUsd: 0.05,
+        durationMs: 10000,
+        usage: { inputTokens: 100, outputTokens: 50, cacheCreationTokens: 0, cacheReadTokens: 0 },
+      });
       const plain = renderPlain(bar);
       expect(plain[0]).toBe(""); // blank spacer
       expect(plain[1]).toContain("─"); // top sep
       expect(plain[3]).toContain("─"); // bottom sep
-      expect(plain[4]).toContain("step 1/2");
+      expect(plain[4]).toContain("10s");
       expect(plain[4]).toContain("$0.05");
+      expect(plain[4]).toContain("150 tokens");
+      expect(plain[4]).not.toContain("step 1/2");
     });
   });
 
   describe("footer rendering", () => {
-    it("renders step info", () => {
+    it("does not render step or iteration info", () => {
       const bar = new StatusBar();
-      bar.setStatus({ step: 2, totalSteps: 3 });
+      bar.setStatus({ step: 2, totalSteps: 3, iteration: 1, max: 3 });
       const [, , , , footer] = renderPlain(bar);
-      expect(footer).toContain("step 2/3");
-    });
-
-    it("renders iteration info", () => {
-      const bar = new StatusBar();
-      bar.setStatus({ step: 1, totalSteps: 3, iteration: 3, max: 10 });
-      const [, , , , footer] = renderPlain(bar);
-      expect(footer).toContain("iter 3/10");
-    });
-
-    it("renders iteration without max", () => {
-      const bar = new StatusBar();
-      bar.setStatus({ step: 1, totalSteps: 1, iteration: 5 });
-      const [, , , , footer] = renderPlain(bar);
-      expect(footer).toContain("iter 5");
-      expect(footer).not.toContain("iter 5/");
+      expect(footer).not.toContain("step 2/3");
+      expect(footer).not.toContain("iter 1/3");
     });
 
     it("renders cost", () => {
@@ -77,6 +71,15 @@ describe("StatusBar", () => {
       bar.setStatus({ durationMs: 134000 });
       const [, , , , footer] = renderPlain(bar);
       expect(footer).toContain("2m 14s");
+    });
+
+    it("renders token usage", () => {
+      const bar = new StatusBar();
+      bar.setStatus({
+        usage: { inputTokens: 1500, outputTokens: 500, cacheCreationTokens: 0, cacheReadTokens: 0 },
+      });
+      const [, , , , footer] = renderPlain(bar);
+      expect(footer).toContain("2.0k tokens");
     });
   });
 
