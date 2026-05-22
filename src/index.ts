@@ -39,7 +39,9 @@ export type {
   LoopConfig,
   PipelineState,
   RunResult,
+  SessionResult,
   Step,
+  StepExitReason,
   StepResult,
   TemplateContext,
 } from "./lib/types.js";

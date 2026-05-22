@@ -16,6 +16,7 @@ export interface EventProcessorContext {
   logger: Logger;
   isAborted: () => boolean;
   onEvent?: (event: AgentEvent, stepIndex: number) => void;
+  onUsageDelta?: (costDelta: number, usageDelta: TokenUsage) => void;
 }
 
 export async function processAgentEvents(
@@ -41,27 +42,36 @@ export async function processAgentEvents(
     eventCount++;
     if (ctx.isAborted()) break;
 
-    ctx.onEvent?.(event, stepIndex);
-    logEvent(ctx.logger, event, stepIndex, stepLabel, eventCount);
-
     switch (event.type) {
-      case "done":
+      case "usage_update": {
+        const normalizedUsage = normalizeUsage(event.usage);
+        const usageDelta = subtractUsage(normalizedUsage, usage);
+        const costDelta = event.costUsd - cost;
+        cost = event.costUsd;
+        usage = normalizedUsage;
+        ctx.onUsageDelta?.(costDelta, usageDelta);
+        break;
+      }
+      case "done": {
         result = event.result;
+        const normalizedUsage = normalizeUsage(event.usage);
+        const usageDelta = subtractUsage(normalizedUsage, usage);
+        const costDelta = event.costUsd - cost;
         cost = event.costUsd;
         duration = event.durationMs;
-        usage = {
-          inputTokens: event.usage.inputTokens,
-          outputTokens: event.usage.outputTokens,
-          cacheCreationTokens: event.usage.cacheCreationTokens ?? 0,
-          cacheReadTokens: event.usage.cacheReadTokens ?? 0,
-        };
+        usage = normalizedUsage;
+        ctx.onUsageDelta?.(costDelta, usageDelta);
         break;
+      }
       case "error":
         hadError = true;
         errorMsg = event.message;
         result = "";
         break;
     }
+
+    ctx.onEvent?.(event, stepIndex);
+    logEvent(ctx.logger, event, stepIndex, stepLabel, eventCount);
   }
 
   if (eventCount === 0) {
@@ -69,6 +79,31 @@ export async function processAgentEvents(
   }
 
   return { result, cost, duration, usage, hadError, errorMsg };
+}
+
+type UsageLike = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
+};
+
+function normalizeUsage(usage: UsageLike): TokenUsage {
+  return {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheCreationTokens: usage.cacheCreationTokens ?? 0,
+    cacheReadTokens: usage.cacheReadTokens ?? 0,
+  };
+}
+
+function subtractUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  return {
+    inputTokens: a.inputTokens - b.inputTokens,
+    outputTokens: a.outputTokens - b.outputTokens,
+    cacheCreationTokens: (a.cacheCreationTokens ?? 0) - (b.cacheCreationTokens ?? 0),
+    cacheReadTokens: (a.cacheReadTokens ?? 0) - (b.cacheReadTokens ?? 0),
+  };
 }
 
 function logEvent(
@@ -128,6 +163,14 @@ function logEvent(
       });
       break;
     }
+    case "usage_update":
+      logger.debug("Usage updated", {
+        costUsd: event.costUsd,
+        inputTokens: event.usage.inputTokens,
+        outputTokens: event.usage.outputTokens,
+        stepIndex,
+      });
+      break;
     case "done":
       logger.info(`${stepLabel} - done (cost=$${event.costUsd.toFixed(4)}, ${eventCount} events)`);
       break;

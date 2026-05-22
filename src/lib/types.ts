@@ -66,6 +66,18 @@ export type RunResult = {
 };
 
 /** Result of a single step execution. */
+export type StepExitReason = "done" | "loop_done" | "max_reached" | "error";
+
+export type SessionResult = {
+  iteration: number;
+  result: string;
+  costUsd: number;
+  durationMs: number;
+  usage: TokenUsage;
+  exitReason: StepExitReason;
+  error?: string;
+};
+
 export type StepResult = {
   step: Step;
   iterations: number;
@@ -73,7 +85,7 @@ export type StepResult = {
   costUsd: number;
   durationMs: number;
   usage: TokenUsage;
-  exitReason: "done" | "loop_done" | "max_reached" | "error";
+  exitReason: StepExitReason;
   error?: string;
 };
 

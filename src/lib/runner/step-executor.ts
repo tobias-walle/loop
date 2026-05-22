@@ -2,8 +2,8 @@ import type { AgentAdapter, AgentEvent, AgentSession } from "../../agents/types.
 import { extractExitMarker } from "../exit-marker.js";
 import type { Logger } from "../logging.js";
 import { loadTemplate } from "../template.js";
-import type { PipelineState, Step, StepResult } from "../types.js";
-import { processAgentEvents } from "./event-processor.js";
+import type { PipelineState, SessionResult, Step, StepResult } from "../types.js";
+import { type IterationResult, processAgentEvents } from "./event-processor.js";
 import { addUsage, buildPrompt, emptyUsage } from "./prompt-builder.js";
 
 export interface StepExecutorContext {
@@ -17,6 +17,7 @@ export interface StepExecutorContext {
   setCurrentSession: (session: AgentSession | null) => void;
   onEvent?: (event: AgentEvent, stepIndex: number) => void;
   onStepStart?: (stepIndex: number, step: Step, iteration: number) => void;
+  onSessionComplete?: (stepIndex: number, result: SessionResult) => void;
   onStepComplete?: (stepIndex: number, result: StepResult) => void;
 }
 
@@ -91,7 +92,18 @@ export async function executeStep(
     }
     ctx.pendingMessages.length = 0;
 
-    const iterResult = await processAgentEvents(ctx, session, stepIndex, stepLabel);
+    const iterResult = await processAgentEvents(
+      {
+        ...ctx,
+        onUsageDelta(costDelta, usageDelta) {
+          ctx.state.costUsd += costDelta;
+          ctx.state.usage = addUsage(ctx.state.usage, usageDelta);
+        },
+      },
+      session,
+      stepIndex,
+      stepLabel,
+    );
 
     // Wait for the process to fully exit before continuing, so the next
     // iteration doesn't race with a still-shutting-down process (e.g. Claude
@@ -104,14 +116,13 @@ export async function executeStep(
     totalUsage = addUsage(totalUsage, iterResult.usage);
     lastResult = iterResult.result;
 
-    ctx.state.costUsd += iterResult.cost;
     ctx.state.durationMs += iterResult.duration;
-    ctx.state.usage = addUsage(ctx.state.usage, iterResult.usage);
 
     if (iterResult.hadError) {
       exitReason = "error";
       errorMsg = iterResult.errorMsg;
       ctx.logger.error(`${stepLabel} - error: ${errorMsg}`);
+      emitSessionComplete(ctx, stepIndex, iteration, iterResult, exitReason, errorMsg);
       break;
     }
 
@@ -119,6 +130,7 @@ export async function executeStep(
       ctx.logger.warn("Abort detected after iteration", { stepIndex, iteration });
       exitReason = "error";
       errorMsg = "Aborted";
+      emitSessionComplete(ctx, stepIndex, iteration, iterResult, exitReason, errorMsg);
       break;
     }
 
@@ -133,6 +145,7 @@ export async function executeStep(
     );
 
     exitReason = loopResult.exitReason;
+    emitSessionComplete(ctx, stepIndex, iteration, iterResult, exitReason);
     if (loopResult.shouldBreak) break;
     previousIterationSummary = loopResult.previousIterationSummary;
     iteration++;
@@ -151,6 +164,25 @@ export async function executeStep(
 
   ctx.onStepComplete?.(stepIndex, stepResult);
   return stepResult;
+}
+
+function emitSessionComplete(
+  ctx: StepExecutorContext,
+  stepIndex: number,
+  iteration: number,
+  iterResult: IterationResult,
+  exitReason: StepResult["exitReason"],
+  error?: string,
+): void {
+  ctx.onSessionComplete?.(stepIndex, {
+    iteration,
+    result: iterResult.result,
+    costUsd: iterResult.cost,
+    durationMs: iterResult.duration,
+    usage: iterResult.usage,
+    exitReason,
+    error,
+  });
 }
 
 interface LoopEvaluation {

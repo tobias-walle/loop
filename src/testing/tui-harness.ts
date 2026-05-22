@@ -100,21 +100,30 @@ async function main(): Promise<void> {
         usage: state.usage,
       });
     },
-    onStepStart: (stepIndex, step) => {
+    onStepStart: (stepIndex, step, iteration) => {
       const task = step.type === "task" ? step.task : step.tasks.join(", ");
-      tui.showStepHeader(stepIndex + 1, steps.length, task);
+      const isLoop = step.until != null || (step.repeat != null && step.repeat > 1);
+      const maxDisplay =
+        step.max ?? (step.repeat != null && step.repeat > 1 ? step.repeat : undefined);
+      tui.showStepHeader(
+        stepIndex + 1,
+        steps.length,
+        task,
+        isLoop ? iteration : undefined,
+        maxDisplay,
+      );
       tui.updateStatus({
         step: stepIndex + 1,
         totalSteps: steps.length,
         usage: runner.getState().usage,
       });
     },
-    onStepComplete: (_stepIndex, result) => {
+    onSessionComplete: (_stepIndex, result) => {
       if (result.exitReason !== "error") {
         tui.showCompletion(
           result.exitReason,
           result.durationMs,
-          result.iterations,
+          undefined,
           result.costUsd,
           result.usage,
         );

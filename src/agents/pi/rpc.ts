@@ -1,9 +1,10 @@
 import type { Readable } from "node:stream";
 
 export type PiRpcCommand =
-  | { type: "prompt"; message: string }
-  | { type: "steer"; message: string }
-  | { type: "abort" };
+  | { id?: string; type: "prompt"; message: string }
+  | { id?: string; type: "steer"; message: string }
+  | { id?: string; type: "abort" }
+  | { id?: string; type: "get_session_stats" };
 
 export async function* readJsonLines(stream: Readable): AsyncGenerator<unknown> {
   let buffer = "";

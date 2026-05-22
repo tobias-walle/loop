@@ -20,6 +20,8 @@ export type Scenario = {
   turns: Turn[];
   cost?: number;
   duration?: number;
+  usage?: Extract<AgentEvent, { type: "done" }>["usage"];
+  usageUpdates?: Extract<AgentEvent, { type: "usage_update" }>[];
   retries?: { attempt: number; maxRetries: number; delayMs: number; error: string }[];
 };
 
@@ -221,6 +223,10 @@ export function createStubAdapter(scenarios: Scenario | Scenario[]): AgentAdapte
           yield event;
         }
 
+        for (const event of scenario.usageUpdates ?? []) {
+          yield event;
+        }
+
         // Collect the final text from the last turn
         const lastTurn = scenario.turns[scenario.turns.length - 1];
         const resultText = lastTurn?.text ?? "";
@@ -230,7 +236,7 @@ export function createStubAdapter(scenarios: Scenario | Scenario[]): AgentAdapte
           result: resultText,
           costUsd: scenario.cost ?? 0,
           durationMs: scenario.duration ?? 0,
-          usage: {
+          usage: scenario.usage ?? {
             inputTokens: 0,
             outputTokens: 0,
           },

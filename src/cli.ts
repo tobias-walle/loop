@@ -170,16 +170,18 @@ async function main(): Promise<void> {
         usage: runner.getState().usage,
       });
     },
-    onStepComplete: (stepIndex, result) => {
+    onSessionComplete: (_stepIndex, result) => {
       if (result.exitReason !== "error") {
         tui.showCompletion(
           result.exitReason,
           result.durationMs,
-          result.iterations,
+          undefined,
           result.costUsd,
           result.usage,
         );
       }
+    },
+    onStepComplete: (stepIndex, _result) => {
       tui.updateStatus({
         step: stepIndex + 1,
         totalSteps: config.steps.length,

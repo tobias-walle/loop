@@ -1,6 +1,6 @@
 import type { AgentAdapter, AgentEvent, AgentSession } from "../../agents/types.js";
 import { type Logger, noopLogger } from "../logging.js";
-import type { PipelineState, RunResult, Step, StepResult } from "../types.js";
+import type { PipelineState, RunResult, SessionResult, Step, StepResult } from "../types.js";
 import { emptyUsage } from "./prompt-builder.js";
 import { executeStep } from "./step-executor.js";
 
@@ -10,6 +10,7 @@ export interface RunnerOptions {
   logger?: Logger;
   onEvent?: (event: AgentEvent, stepIndex: number) => void;
   onStepStart?: (stepIndex: number, step: Step, iteration: number) => void;
+  onSessionComplete?: (stepIndex: number, result: SessionResult) => void;
   onStepComplete?: (stepIndex: number, result: StepResult) => void;
 }
 
@@ -80,6 +81,7 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
             },
             onEvent: opts.onEvent,
             onStepStart: opts.onStepStart,
+            onSessionComplete: opts.onSessionComplete,
             onStepComplete: opts.onStepComplete,
           },
           i,

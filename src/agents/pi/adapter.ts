@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { type Logger, noopLogger } from "../../lib/logging.js";
 import type { AgentAdapter, AgentEvent, AgentSession, AgentSpawnOptions } from "../types.js";
-import { createPiEventState, mapPiEvent } from "./events.js";
+import { completePendingDone, createPiEventState, mapPiEvent } from "./events.js";
 import { readJsonLines, writeRpcCommand } from "./rpc.js";
 
 export interface PiRpcAdapterOptions {
@@ -98,6 +98,14 @@ async function* wrapPiEvents(
   try {
     for await (const raw of readJsonLines(stdout as import("node:stream").Readable)) {
       const events = mapPiEvent(raw, state);
+      if (isRecord(raw) && raw.type === "turn_end") {
+        writeRpcCommand(proc.stdin, { id: "loop-turn-stats", type: "get_session_stats" });
+        logger.debug("Requested turn pi session stats", { pid });
+      }
+      if (isRecord(raw) && raw.type === "agent_end") {
+        writeRpcCommand(proc.stdin, { id: "loop-final-stats", type: "get_session_stats" });
+        logger.debug("Requested final pi session stats", { pid });
+      }
       for (const event of events) {
         yield event;
         if (event.type === "done" || event.type === "error") {
@@ -113,6 +121,11 @@ async function* wrapPiEvents(
     return;
   }
 
+  if (state.pendingDone) {
+    yield completePendingDone(state);
+    return;
+  }
+
   const exitCode = proc.exitCode;
   const message =
     exitCode != null
@@ -124,4 +137,8 @@ async function* wrapPiEvents(
 
 async function* noStdout(): AsyncGenerator<AgentEvent> {
   yield { type: "error", message: "pi RPC process has no stdout stream" };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

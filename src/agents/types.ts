@@ -13,6 +13,7 @@ export type AgentEvent =
   | { type: "retry"; attempt: number; maxRetries: number; delayMs: number; error: string }
   | { type: "rate_limit"; status: string; resetsAt: number }
   | { type: "error"; message: string }
+  | { type: "usage_update"; costUsd: number; usage: TokenUsage }
   | { type: "done"; result: string; costUsd: number; durationMs: number; usage: TokenUsage }
   | {
       type: "task_started";

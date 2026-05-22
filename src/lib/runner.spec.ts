@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Scenario } from "../agents/stub.js";
+import { type Scenario, createStubAdapter } from "../agents/stub.js";
 import { SIMPLE_TEXT } from "../testing/scenarios/basic.js";
 import { RALPH_LOOP_TWO_ITERS } from "../testing/scenarios/loops.js";
 import { createTestRunner, runToCompletion } from "../testing/test-setup.js";
@@ -68,6 +68,31 @@ describe("runner", () => {
     expect(result.stepResults[0].iterations).toBe(3);
     expect(result.stepResults[0].exitReason).toBe("done");
     expect(result.stepResults[0].costUsd).toBe(0.03);
+  });
+
+  test("onSessionComplete fires after every iteration", async () => {
+    const steps: Step[] = [{ type: "task", task: "Run tests", repeat: 3 }];
+    const scenarios: Scenario[] = [
+      { turns: [{ text: "Iteration 1 done" }], cost: 0.01, duration: 100 },
+      { turns: [{ text: "Iteration 2 done" }], cost: 0.02, duration: 200 },
+      { turns: [{ text: "Iteration 3 done" }], cost: 0.03, duration: 300 },
+    ];
+    const sessions: Array<{ stepIndex: number; iteration: number; durationMs: number }> = [];
+    const runner = createRunner(steps, {
+      agent: createStubAdapter(scenarios),
+      projectRoot: `/tmp/loop-test-session-complete-${Date.now()}`,
+      onSessionComplete(stepIndex, result) {
+        sessions.push({ stepIndex, iteration: result.iteration, durationMs: result.durationMs });
+      },
+    });
+
+    await runner.run();
+
+    expect(sessions).toEqual([
+      { stepIndex: 0, iteration: 1, durationMs: 100 },
+      { stepIndex: 0, iteration: 2, durationMs: 200 },
+      { stepIndex: 0, iteration: 3, durationMs: 300 },
+    ]);
   });
 
   test("ralph loop stops on LOOP_DONE", async () => {
@@ -485,5 +510,38 @@ describe("runner", () => {
 
     const stateAfter = runner.getState();
     expect(stateAfter.costUsd).toBe(0.003);
+  });
+
+  test("usage_update updates pipeline state before onEvent", async () => {
+    const steps: Step[] = [{ type: "task", task: "Do it" }];
+    const usage = {
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheCreationTokens: 5,
+      cacheReadTokens: 10,
+    };
+    const adapter = createStubAdapter({
+      turns: [{ text: "Done" }],
+      cost: 0.05,
+      usage,
+      usageUpdates: [{ type: "usage_update", costUsd: 0.05, usage }],
+    });
+    const seenStates: Array<{ costUsd: number; usage: TokenUsage }> = [];
+    const runner = createRunner(steps, {
+      agent: adapter,
+      projectRoot: `/tmp/loop-test-usage-${Date.now()}`,
+      onEvent(event) {
+        if (event.type === "usage_update") {
+          const state = runner.getState();
+          seenStates.push({ costUsd: state.costUsd, usage: state.usage });
+        }
+      },
+    });
+
+    await runner.run();
+
+    expect(seenStates).toEqual([{ costUsd: 0.05, usage }]);
+    expect(runner.getState().costUsd).toBe(0.05);
+    expect(runner.getState().usage).toEqual(usage);
   });
 });

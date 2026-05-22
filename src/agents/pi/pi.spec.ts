@@ -83,6 +83,61 @@ setTimeout(() => {}, 10000);
     expect(() => createPiRpcAdapter({ args: ["--mode", "json"] })).toThrow("does not allow");
   });
 
+  test("requests turn stats for live usage and final stats before done", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
+    const logPath = path.join(dir, "commands.jsonl");
+    const scriptPath = path.join(dir, "fake-pi.js");
+    fs.writeFileSync(
+      scriptPath,
+      `import fs from "node:fs";
+process.stdin.on("data", (chunk) => {
+  fs.appendFileSync(${JSON.stringify(logPath)}, chunk);
+  for (const line of chunk.toString().trim().split("\\n")) {
+    if (!line) continue;
+    const command = JSON.parse(line);
+    if (command.type === "prompt") {
+      process.stdout.write(JSON.stringify({ type: "turn_end", message: { role: "assistant" }, toolResults: [] }) + "\\n");
+      process.stdout.write(JSON.stringify({ type: "agent_end", result: "done", messages: [] }) + "\\n");
+    }
+    if (command.type === "get_session_stats") {
+      process.stdout.write(JSON.stringify({ id: command.id, type: "response", command: "get_session_stats", success: true, data: { tokens: { input: 7, output: 8, cacheWrite: 9, cacheRead: 10 }, cost: 0.11 } }) + "\\n");
+    }
+  }
+});
+setTimeout(() => {}, 10000);
+`,
+    );
+
+    const session = createPiRpcAdapter({ command: process.execPath, args: [scriptPath] }).spawn(
+      "hello",
+    );
+    const events = [];
+    for await (const event of session.events) events.push(event);
+    await session.exited;
+
+    const commands = fs
+      .readFileSync(logPath, "utf-8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(commands).toContainEqual({ type: "get_session_stats", id: "loop-turn-stats" });
+    expect(commands).toContainEqual({ type: "get_session_stats", id: "loop-final-stats" });
+    expect(events).toEqual([
+      {
+        type: "usage_update",
+        costUsd: 0.11,
+        usage: { inputTokens: 7, outputTokens: 8, cacheCreationTokens: 9, cacheReadTokens: 10 },
+      },
+      {
+        type: "done",
+        result: "done",
+        costUsd: 0.11,
+        durationMs: 0,
+        usage: { inputTokens: 7, outputTokens: 8, cacheCreationTokens: 9, cacheReadTokens: 10 },
+      },
+    ]);
+  });
+
   test("does not duplicate --no-session from configured args", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
     const argvPath = path.join(dir, "argv.json");
@@ -181,24 +236,87 @@ describe("pi event mapping", () => {
     ).toEqual([{ type: "retry", attempt: 2, maxRetries: 5, delayMs: 1000, error: "rate" }]);
   });
 
-  test("emits done with usage and cost", () => {
+  test("emits done from final session stats after agent_end", () => {
     const state = createPiEventState();
-    const events = mapPiEvent(
-      {
-        type: "agent_end",
-        result: "done",
-        durationMs: 12,
-        usage: { input: 1, output: 2, cacheWrite: 3, cacheRead: 4, cost: { total: 0.5 } },
-      },
-      state,
-    );
-    expect(events).toEqual([
+    expect(
+      mapPiEvent(
+        {
+          type: "agent_end",
+          result: "done",
+          durationMs: 12,
+          messages: [
+            {
+              role: "assistant",
+              usage: { input: 1, output: 2, cacheWrite: 3, cacheRead: 4, cost: { total: 0.5 } },
+            },
+          ],
+        },
+        state,
+      ),
+    ).toEqual([]);
+
+    expect(
+      mapPiEvent(
+        {
+          id: "loop-final-stats",
+          type: "response",
+          command: "get_session_stats",
+          success: true,
+          data: {
+            tokens: { input: 10, output: 20, cacheWrite: 30, cacheRead: 40 },
+            cost: 1.25,
+          },
+        },
+        state,
+      ),
+    ).toEqual([
       {
         type: "done",
         result: "done",
-        costUsd: 0.5,
+        costUsd: 1.25,
         durationMs: 12,
-        usage: { inputTokens: 1, outputTokens: 2, cacheCreationTokens: 3, cacheReadTokens: 4 },
+        usage: { inputTokens: 10, outputTokens: 20, cacheCreationTokens: 30, cacheReadTokens: 40 },
+      },
+    ]);
+  });
+
+  test("falls back to aggregated assistant usage when final stats fail", () => {
+    const state = createPiEventState();
+    expect(
+      mapPiEvent(
+        {
+          type: "agent_end",
+          result: "done",
+          messages: [
+            { role: "assistant", usage: { input: 1, output: 2, cost: { total: 0.1 } } },
+            {
+              role: "assistant",
+              usage: { input: 3, output: 4, cacheWrite: 5, cacheRead: 6, cost: { total: 0.2 } },
+            },
+          ],
+        },
+        state,
+      ),
+    ).toEqual([]);
+
+    expect(
+      mapPiEvent(
+        {
+          id: "loop-final-stats",
+          type: "response",
+          command: "get_session_stats",
+          success: false,
+          error: "stats unavailable",
+        },
+        state,
+      ),
+    ).toEqual([
+      {
+        type: "done",
+        result: "done",
+        costUsd: 0.30000000000000004,
+        durationMs: 0,
+        usage: { inputTokens: 4, outputTokens: 6, cacheCreationTokens: 5, cacheReadTokens: 6 },
       },
     ]);
   });
