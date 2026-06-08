@@ -58,6 +58,8 @@ export async function executeStep(
 
     ctx.state.step = stepIndex;
     ctx.state.iteration = iteration;
+    ctx.state.currentSessionCostUsd = 0;
+    ctx.state.currentSessionUsage = emptyUsage();
 
     const stepLabel = `Step ${stepIndex + 1}/${ctx.steps.length} - iteration ${iteration}`;
     ctx.logger.info(`${stepLabel} - start`);
@@ -97,7 +99,9 @@ export async function executeStep(
         ...ctx,
         onUsageDelta(costDelta, usageDelta) {
           ctx.state.costUsd += costDelta;
+          ctx.state.currentSessionCostUsd += costDelta;
           ctx.state.usage = addUsage(ctx.state.usage, usageDelta);
+          ctx.state.currentSessionUsage = addUsage(ctx.state.currentSessionUsage, usageDelta);
         },
       },
       session,

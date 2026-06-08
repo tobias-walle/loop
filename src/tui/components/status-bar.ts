@@ -10,8 +10,10 @@ interface StatusInfo {
   iteration?: number;
   max?: number;
   costUsd?: number;
+  currentSessionCostUsd?: number;
   durationMs?: number;
   usage?: TokenUsage;
+  currentSessionUsage?: TokenUsage;
 }
 
 /**
@@ -87,11 +89,19 @@ export class StatusBar implements Component, Focusable {
     }
 
     if (s.costUsd != null) {
-      parts.push(green(`$${s.costUsd.toFixed(2)}`));
+      const cost =
+        s.currentSessionCostUsd != null
+          ? `$${s.currentSessionCostUsd.toFixed(2)} / $${s.costUsd.toFixed(2)}`
+          : `$${s.costUsd.toFixed(2)}`;
+      parts.push(green(cost));
     }
 
     if (s.usage != null) {
-      parts.push(cyan(formatTokens(s.usage)));
+      const tokens =
+        s.currentSessionUsage != null
+          ? `${formatTokens(s.currentSessionUsage).replace(" tokens", "")} / ${formatTokens(s.usage)}`
+          : formatTokens(s.usage);
+      parts.push(cyan(tokens));
     }
 
     const sep = dim(" · ");

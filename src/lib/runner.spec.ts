@@ -505,11 +505,13 @@ describe("runner", () => {
     const stateBefore = runner.getState();
     expect(stateBefore.totalSteps).toBe(1);
     expect(stateBefore.costUsd).toBe(0);
+    expect(stateBefore.currentSessionCostUsd).toBe(0);
 
     await runToCompletion(runner);
 
     const stateAfter = runner.getState();
     expect(stateAfter.costUsd).toBe(0.003);
+    expect(stateAfter.currentSessionCostUsd).toBe(0.003);
   });
 
   test("usage_update updates pipeline state before onEvent", async () => {
@@ -526,22 +528,36 @@ describe("runner", () => {
       usage,
       usageUpdates: [{ type: "usage_update", costUsd: 0.05, usage }],
     });
-    const seenStates: Array<{ costUsd: number; usage: TokenUsage }> = [];
+    const seenStates: Array<{
+      costUsd: number;
+      currentSessionCostUsd: number;
+      usage: TokenUsage;
+      currentSessionUsage: TokenUsage;
+    }> = [];
     const runner = createRunner(steps, {
       agent: adapter,
       projectRoot: `/tmp/loop-test-usage-${Date.now()}`,
       onEvent(event) {
         if (event.type === "usage_update") {
           const state = runner.getState();
-          seenStates.push({ costUsd: state.costUsd, usage: state.usage });
+          seenStates.push({
+            costUsd: state.costUsd,
+            currentSessionCostUsd: state.currentSessionCostUsd,
+            usage: state.usage,
+            currentSessionUsage: state.currentSessionUsage,
+          });
         }
       },
     });
 
     await runner.run();
 
-    expect(seenStates).toEqual([{ costUsd: 0.05, usage }]);
+    expect(seenStates).toEqual([
+      { costUsd: 0.05, currentSessionCostUsd: 0.05, usage, currentSessionUsage: usage },
+    ]);
     expect(runner.getState().costUsd).toBe(0.05);
+    expect(runner.getState().currentSessionCostUsd).toBe(0.05);
     expect(runner.getState().usage).toEqual(usage);
+    expect(runner.getState().currentSessionUsage).toEqual(usage);
   });
 });

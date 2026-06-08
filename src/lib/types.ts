@@ -37,9 +37,11 @@ export type PipelineState = {
   totalSteps: number;
   iteration: number;
   costUsd: number;
+  currentSessionCostUsd: number;
   durationMs: number;
   startTime: number;
   usage: TokenUsage;
+  currentSessionUsage: TokenUsage;
 };
 
 /** Context passed to the template renderer for a single iteration. */

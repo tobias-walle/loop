@@ -146,7 +146,9 @@ async function main(): Promise<void> {
         step: stepIndex + 1,
         totalSteps: state.totalSteps,
         costUsd: state.costUsd,
+        currentSessionCostUsd: state.currentSessionCostUsd,
         usage: state.usage,
+        currentSessionUsage: state.currentSessionUsage,
       });
     },
     onStepStart: (stepIndex, step, iteration) => {
@@ -161,13 +163,16 @@ async function main(): Promise<void> {
         isLoop ? iteration : undefined,
         maxDisplay,
       );
+      const state = runner.getState();
       tui.updateStatus({
         step: stepIndex + 1,
         totalSteps: config.steps.length,
         iteration: isLoop ? iteration : undefined,
         max: maxDisplay,
-        costUsd: runner.getState().costUsd,
-        usage: runner.getState().usage,
+        costUsd: state.costUsd,
+        currentSessionCostUsd: state.currentSessionCostUsd,
+        usage: state.usage,
+        currentSessionUsage: state.currentSessionUsage,
       });
     },
     onSessionComplete: (_stepIndex, result) => {
@@ -182,11 +187,14 @@ async function main(): Promise<void> {
       }
     },
     onStepComplete: (stepIndex, _result) => {
+      const state = runner.getState();
       tui.updateStatus({
         step: stepIndex + 1,
         totalSteps: config.steps.length,
-        costUsd: runner.getState().costUsd,
-        usage: runner.getState().usage,
+        costUsd: state.costUsd,
+        currentSessionCostUsd: state.currentSessionCostUsd,
+        usage: state.usage,
+        currentSessionUsage: state.currentSessionUsage,
       });
     },
   });

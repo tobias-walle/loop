@@ -39,8 +39,10 @@ export interface LoopTUI {
     iteration?: number;
     max?: number;
     costUsd?: number;
+    currentSessionCostUsd?: number;
     durationMs?: number;
     usage?: TokenUsage;
+    currentSessionUsage?: TokenUsage;
   }): void;
 }
 
@@ -143,8 +145,10 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
       iteration?: number;
       max?: number;
       costUsd?: number;
+      currentSessionCostUsd?: number;
       durationMs?: number;
       usage?: TokenUsage;
+      currentSessionUsage?: TokenUsage;
     }): void {
       statusBar.setStatus({ ...info, durationMs: Date.now() - startTime });
       tui.requestRender();

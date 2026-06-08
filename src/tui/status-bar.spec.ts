@@ -81,6 +81,29 @@ describe("StatusBar", () => {
       const [, , , , footer] = renderPlain(bar);
       expect(footer).toContain("2.0k tokens");
     });
+
+    it("renders current session and total cost and tokens", () => {
+      const bar = new StatusBar();
+      bar.setStatus({
+        costUsd: 0.11,
+        currentSessionCostUsd: 0.03,
+        usage: {
+          inputTokens: 9000,
+          outputTokens: 3000,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+        },
+        currentSessionUsage: {
+          inputTokens: 2000,
+          outputTokens: 1000,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+        },
+      });
+      const [, , , , footer] = renderPlain(bar);
+      expect(footer).toContain("$0.03 / $0.11");
+      expect(footer).toContain("3.0k / 12.0k tokens");
+    });
   });
 
   describe("input handling", () => {

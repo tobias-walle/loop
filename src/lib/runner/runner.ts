@@ -33,9 +33,11 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
     totalSteps: steps.length,
     iteration: 1,
     costUsd: 0,
+    currentSessionCostUsd: 0,
     durationMs: 0,
     startTime: Date.now(),
     usage: emptyUsage(),
+    currentSessionUsage: emptyUsage(),
   };
 
   logger.info("Runner created", {
