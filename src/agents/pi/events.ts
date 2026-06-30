@@ -1,4 +1,5 @@
 import type { AgentEvent, TokenUsage } from "../types.js";
+import { formatMessageEndError } from "./error-format.js";
 import { arrayOfStrings, isRecord, numberAt, recordAt, stringAt } from "./object.js";
 
 export type PiEventState = {
@@ -86,8 +87,7 @@ export function mapPiEvent(raw: unknown, state: PiEventState): AgentEvent[] {
     case "message_end": {
       const stopReason =
         stringAt(raw, ["assistant", "stopReason"]) ?? stringAt(raw, ["message", "stopReason"]);
-      if (stopReason === "error")
-        return [{ type: "error", message: "pi assistant message ended with error" }];
+      if (stopReason === "error") return [{ type: "error", message: formatMessageEndError(raw) }];
       return [];
     }
     case "turn_start":

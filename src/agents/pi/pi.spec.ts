@@ -328,6 +328,38 @@ describe("pi event mapping", () => {
     expect(mapPiEvent({ type: "extension_error", message: "bad" }, createPiEventState())).toEqual([
       { type: "error", message: "bad" },
     ]);
+    expect(
+      mapPiEvent(
+        {
+          type: "message_end",
+          message: {
+            role: "assistant",
+            stopReason: "error",
+            errorMessage: "Subagent failed: rate limit",
+            provider: "anthropic",
+            model: "claude-sonnet",
+            responseId: "msg_123",
+            diagnostics: [{ message: "upstream 429" }],
+          },
+        },
+        createPiEventState(),
+      ),
+    ).toEqual([
+      {
+        type: "error",
+        message:
+          "pi assistant message ended with error: Subagent failed: rate limit · anthropic/claude-sonnet/msg_123 · diagnostics: upstream 429",
+      },
+    ]);
+    expect(
+      mapPiEvent({ type: "message_end", message: { stopReason: "error" } }, createPiEventState()),
+    ).toEqual([
+      {
+        type: "error",
+        message:
+          'pi assistant message ended with error: raw: {"type":"message_end","message":{"stopReason":"error"}}',
+      },
+    ]);
     expect(mapPiEvent({ type: "something_else" }, createPiEventState())).toEqual([
       { type: "unknown", eventType: "something_else", raw: { type: "something_else" } },
     ]);
