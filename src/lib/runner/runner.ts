@@ -18,7 +18,6 @@ export interface Runner {
   run(): Promise<RunResult>;
   abort(): void;
   getState(): PipelineState;
-  sendMessage(text: string): void;
 }
 
 export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
@@ -26,7 +25,6 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
   const logger = opts.logger ?? noopLogger;
   let aborted = false;
   let currentSession: AgentSession | null = null;
-  const pendingMessages: string[] = [];
 
   const state: PipelineState = {
     step: 0,
@@ -76,7 +74,6 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
             logger,
             steps,
             state,
-            pendingMessages,
             isAborted: () => aborted,
             setCurrentSession: (s) => {
               currentSession = s;
@@ -147,22 +144,6 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
       logger.warn("Abort called", { hadActiveSession: currentSession != null });
       aborted = true;
       currentSession?.abort();
-    },
-
-    sendMessage(text: string): void {
-      if (currentSession) {
-        logger.debug("Message sent to active session", {
-          textLength: text.length,
-        });
-        currentSession.sendMessage(text);
-        opts.onEvent?.({ type: "user_message", text }, state.step);
-      } else {
-        logger.debug("Message queued (no active session)", {
-          textLength: text.length,
-          queueSize: pendingMessages.length + 1,
-        });
-        pendingMessages.push(text);
-      }
     },
 
     getState(): PipelineState {

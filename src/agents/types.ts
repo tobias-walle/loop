@@ -32,7 +32,6 @@ export type AgentEvent =
       model?: string;
       totalTokens?: number;
     }
-  | { type: "user_message"; text: string }
   | { type: "unknown"; eventType: string; raw: unknown };
 
 export type TokenUsage = {
@@ -46,8 +45,6 @@ export type TokenUsage = {
 export interface AgentSession {
   /** Async iterator of normalized events. */
   events: AsyncIterable<AgentEvent>;
-  /** Inject a user message mid-session. */
-  sendMessage(text: string): void;
   /** Kill the process. */
   abort(): void;
   /** Resolves when the underlying process has fully exited. */

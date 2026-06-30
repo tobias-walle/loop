@@ -8,7 +8,6 @@ import {
   formatStepHeader,
   formatTokens,
   formatToolLine,
-  formatUserMessage,
 } from "./formatters.js";
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape stripping requires matching control chars
@@ -251,13 +250,5 @@ describe("formatError", () => {
     const text = strip(formatError("Connection failed"));
     expect(text).toContain("✕ error");
     expect(text).toContain("Connection failed");
-  });
-});
-
-describe("formatUserMessage", () => {
-  test("formats user message", () => {
-    const text = strip(formatUserMessage("fix the CSS"));
-    expect(text).toContain("› user");
-    expect(text).toContain("fix the CSS");
   });
 });

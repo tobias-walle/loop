@@ -1,5 +1,4 @@
-export { createPiRpcAdapter } from "./pi/adapter.js";
-export type { PiRpcAdapterOptions } from "./pi/adapter.js";
-export { readJsonLines, writeRpcCommand } from "./pi/rpc.js";
-export type { PiRpcCommand } from "./pi/rpc.js";
+export { createPiAdapter } from "./pi/adapter.js";
+export type { PiAdapterOptions } from "./pi/adapter.js";
+export { readJsonLines } from "./pi/json.js";
 export { createPiEventState, mapPiEvent } from "./pi/events.js";

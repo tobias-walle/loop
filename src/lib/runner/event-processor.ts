@@ -142,9 +142,6 @@ function logEvent(
         stepIndex,
       });
       break;
-    case "user_message":
-      logger.info("User message injected", { textLength: event.text.length, stepIndex });
-      break;
     case "retry":
       logger.warn("Agent retry", {
         attempt: event.attempt,

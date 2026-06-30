@@ -1,7 +1,7 @@
 /**
  * TUI test harness: runs the real TUI with a slow stub agent.
  * The agent waits for a configurable duration before completing,
- * giving the test time to interact with the input.
+ * giving the test time to interact with the TUI.
  *
  * Usage: bun src/testing/tui-harness.ts [durationMs]
  */
@@ -53,9 +53,6 @@ function createSlowStubAdapter(): AgentAdapter {
       return {
         events: generateEvents(),
         exited: Promise.resolve(),
-        sendMessage(_text: string): void {
-          // no-op for stub
-        },
         abort(): void {
           aborted = true;
           resolveWait?.();
@@ -73,10 +70,6 @@ async function main(): Promise<void> {
   const ref: { runner?: ReturnType<typeof createRunner> } = {};
 
   const tui = createLoopTUI({
-    onUserMessage: (message) => {
-      tui.showUserMessage(message);
-      ref.runner?.sendMessage(message);
-    },
     onInterrupt: () => {
       tui.stop();
       ref.runner?.abort();

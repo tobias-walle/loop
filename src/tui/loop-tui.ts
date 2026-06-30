@@ -1,13 +1,10 @@
-import { Container, ProcessTerminal, TUI, Text } from "@mariozechner/pi-tui";
+import { Container, ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import type { AgentEvent } from "../agents/types.js";
-import { dim } from "../lib/ansi.js";
 import type { RunSummary, TokenUsage } from "../lib/types.js";
 import { StatusBar } from "./components/status-bar.js";
 import { createEventRouter } from "./event-router.js";
-import { formatUserMessage } from "./formatters.js";
 
 export interface LoopTUIOptions {
-  onUserMessage?: (message: string) => void;
   onInterrupt?: () => void;
 }
 
@@ -32,7 +29,6 @@ export interface LoopTUI {
   ): void;
   showSessionInfo(sessionId: string): void;
   showRunSummary(summary: RunSummary): void;
-  showUserMessage(text: string): void;
   updateStatus(info: {
     step?: number;
     totalSteps?: number;
@@ -53,17 +49,11 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
   let startTime = Date.now();
 
   const content = new Container();
-  const pendingMessagesContainer = new Container();
-  const pendingMessageNodes = new Map<string, Text>();
   const statusBar = new StatusBar();
 
   tui.addChild(content);
-  tui.addChild(pendingMessagesContainer);
   tui.addChild(statusBar);
 
-  statusBar.onSubmit = (message: string) => {
-    opts?.onUserMessage?.(message);
-  };
   statusBar.onInterrupt = () => {
     opts?.onInterrupt?.();
   };
@@ -94,12 +84,6 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
     },
 
     handleEvent(event: AgentEvent, stepIndex: number): void {
-      if (event.type === "user_message") {
-        const node = pendingMessageNodes.get(event.text);
-        if (!node) return;
-        pendingMessagesContainer.removeChild(node);
-        pendingMessageNodes.delete(event.text);
-      }
       router.handleEvent(event, stepIndex);
     },
 
@@ -130,13 +114,6 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
 
     showRunSummary(summary: RunSummary): void {
       router.showRunSummary(summary);
-    },
-
-    showUserMessage(text: string): void {
-      const node = new Text(dim(formatUserMessage(text)), 0, 0);
-      pendingMessagesContainer.addChild(node);
-      pendingMessageNodes.set(text, node);
-      tui.requestRender();
     },
 
     updateStatus(info: {

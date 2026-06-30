@@ -1,7 +1,7 @@
 import type { AgentName, LoopRuntimeConfig } from "../lib/config/index.js";
 import type { Logger } from "../lib/logging.js";
 import { createClaudeAdapter } from "./claude.js";
-import { createPiRpcAdapter } from "./pi.js";
+import { createPiAdapter } from "./pi.js";
 import type { AgentAdapter } from "./types.js";
 
 export type CreateConfiguredAgentOptions = {
@@ -22,6 +22,6 @@ export function createConfiguredAgent(options: CreateConfiguredAgentOptions): Ag
     logger: options.logger,
   };
 
-  if (options.selectedAgent === "pi") return createPiRpcAdapter(common);
-  return createClaudeAdapter({ ...common, interactive: true });
+  if (options.selectedAgent === "pi") return createPiAdapter(common);
+  return createClaudeAdapter(common);
 }

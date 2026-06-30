@@ -3,11 +3,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { PassThrough } from "node:stream";
-import { createPiRpcAdapter } from "./adapter";
-import { createPiEventState, mapPiEvent } from "./events";
-import { readJsonLines, writeRpcCommand } from "./rpc";
+import { createPiAdapter } from "./adapter";
+import { completePendingDone, createPiEventState, mapPiEvent } from "./events";
+import { readJsonLines } from "./json";
 
-describe("pi RPC JSONL", () => {
+describe("pi JSONL", () => {
   test("manual reader handles LF and CRLF", async () => {
     const stream = new PassThrough();
     const seen: unknown[] = [];
@@ -19,123 +19,55 @@ describe("pi RPC JSONL", () => {
     await reader;
     expect(seen).toEqual([{ a: 1 }, { b: 2 }]);
   });
-
-  test("writes prompt steer and abort commands", () => {
-    const stream = new PassThrough();
-    const chunks: string[] = [];
-    stream.on("data", (chunk) => chunks.push(chunk.toString()));
-    writeRpcCommand(stream, { type: "prompt", message: "hi" });
-    writeRpcCommand(stream, { type: "steer", message: "go" });
-    writeRpcCommand(stream, { type: "abort" });
-    expect(chunks.join("")).toBe(
-      '{"type":"prompt","message":"hi"}\n{"type":"steer","message":"go"}\n{"type":"abort"}\n',
-    );
-  });
 });
 
-describe("pi RPC adapter", () => {
-  test("sends prompt, steer, and abort commands", async () => {
+describe("pi JSON adapter", () => {
+  test("spawns pi print JSON mode with prompt as an argument", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
-    const logPath = path.join(dir, "commands.jsonl");
     const argvPath = path.join(dir, "argv.json");
     const scriptPath = path.join(dir, "fake-pi.js");
     fs.writeFileSync(
       scriptPath,
       `import fs from "node:fs";
 fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(2)));
-process.stdin.on("data", (chunk) => {
-  fs.appendFileSync(${JSON.stringify(logPath)}, chunk);
-});
-process.on("SIGTERM", () => setTimeout(() => process.exit(0), 25));
-setTimeout(() => {}, 10000);
+process.stdout.write(JSON.stringify({ type: "session", id: "sess-1" }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "agent_start" }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "message_start", message: { role: "assistant", model: "gpt-5.5" } }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hello" } }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "agent_end", result: "hello", durationMs: 12, messages: [{ role: "assistant", usage: { input: 1, output: 2, cacheWrite: 3, cacheRead: 4, cost: { total: 0.5 } } }] }) + "\\n");
 `,
     );
 
-    const session = createPiRpcAdapter({ command: process.execPath, args: [scriptPath] }).spawn(
-      "hello",
-    );
-    session.sendMessage("steer now");
-    for (let attempt = 0; attempt < 20 && !fs.existsSync(logPath); attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    session.abort();
-    await session.exited;
-
-    expect(JSON.parse(fs.readFileSync(argvPath, "utf-8"))).toEqual([
-      "--no-session",
-      "--mode",
-      "rpc",
-    ]);
-
-    const commands = fs
-      .readFileSync(logPath, "utf-8")
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(commands).toEqual([
-      { type: "prompt", message: "hello" },
-      { type: "steer", message: "steer now" },
-      { type: "abort" },
-    ]);
-  });
-
-  test("rejects --mode in args", () => {
-    expect(() => createPiRpcAdapter({ args: ["--mode", "json"] })).toThrow("does not allow");
-  });
-
-  test("requests turn stats for live usage and final stats before done", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
-    const logPath = path.join(dir, "commands.jsonl");
-    const scriptPath = path.join(dir, "fake-pi.js");
-    fs.writeFileSync(
-      scriptPath,
-      `import fs from "node:fs";
-process.stdin.on("data", (chunk) => {
-  fs.appendFileSync(${JSON.stringify(logPath)}, chunk);
-  for (const line of chunk.toString().trim().split("\\n")) {
-    if (!line) continue;
-    const command = JSON.parse(line);
-    if (command.type === "prompt") {
-      process.stdout.write(JSON.stringify({ type: "turn_end", message: { role: "assistant" }, toolResults: [] }) + "\\n");
-      process.stdout.write(JSON.stringify({ type: "agent_end", result: "done", messages: [] }) + "\\n");
-    }
-    if (command.type === "get_session_stats") {
-      process.stdout.write(JSON.stringify({ id: command.id, type: "response", command: "get_session_stats", success: true, data: { tokens: { input: 7, output: 8, cacheWrite: 9, cacheRead: 10 }, cost: 0.11 } }) + "\\n");
-    }
-  }
-});
-setTimeout(() => {}, 10000);
-`,
-    );
-
-    const session = createPiRpcAdapter({ command: process.execPath, args: [scriptPath] }).spawn(
+    const session = createPiAdapter({ command: process.execPath, args: [scriptPath] }).spawn(
       "hello",
     );
     const events = [];
     for await (const event of session.events) events.push(event);
     await session.exited;
 
-    const commands = fs
-      .readFileSync(logPath, "utf-8")
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(commands).toContainEqual({ type: "get_session_stats", id: "loop-turn-stats" });
-    expect(commands).toContainEqual({ type: "get_session_stats", id: "loop-final-stats" });
+    expect(JSON.parse(fs.readFileSync(argvPath, "utf-8"))).toEqual([
+      "--no-session",
+      "--print",
+      "--mode",
+      "json",
+      "hello",
+    ]);
     expect(events).toEqual([
-      {
-        type: "usage_update",
-        costUsd: 0.11,
-        usage: { inputTokens: 7, outputTokens: 8, cacheCreationTokens: 9, cacheReadTokens: 10 },
-      },
+      { type: "session_start", model: "pi", sessionId: "sess-1", tools: [] },
+      { type: "session_start", model: "gpt-5.5", sessionId: "sess-1", tools: [] },
+      { type: "text_delta", text: "hello", parentToolUseId: null },
       {
         type: "done",
-        result: "done",
-        costUsd: 0.11,
-        durationMs: 0,
-        usage: { inputTokens: 7, outputTokens: 8, cacheCreationTokens: 9, cacheReadTokens: 10 },
+        result: "hello",
+        costUsd: 0.5,
+        durationMs: 12,
+        usage: { inputTokens: 1, outputTokens: 2, cacheCreationTokens: 3, cacheReadTokens: 4 },
       },
     ]);
+  });
+
+  test("rejects --mode in args", () => {
+    expect(() => createPiAdapter({ args: ["--mode", "text"] })).toThrow("does not allow");
   });
 
   test("does not duplicate --no-session from configured args", async () => {
@@ -146,12 +78,10 @@ setTimeout(() => {}, 10000);
       scriptPath,
       `import fs from "node:fs";
 fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(2)));
-process.stdin.resume();
-setTimeout(() => process.exit(0), 25);
 `,
     );
 
-    const session = createPiRpcAdapter({
+    const session = createPiAdapter({
       command: process.execPath,
       args: [scriptPath, "--no-session"],
     }).spawn("hello");
@@ -159,26 +89,48 @@ setTimeout(() => process.exit(0), 25);
 
     expect(JSON.parse(fs.readFileSync(argvPath, "utf-8"))).toEqual([
       "--no-session",
+      "--print",
       "--mode",
-      "rpc",
+      "json",
+      "hello",
     ]);
   });
 });
 
 describe("pi event mapping", () => {
-  test("maps agent_start to synthetic session_start", () => {
-    expect(mapPiEvent({ type: "agent_start" }, createPiEventState())).toEqual([
-      { type: "session_start", model: "pi", sessionId: "pi-rpc", tools: [] },
+  test("stores session metadata and maps agent_start to session_start", () => {
+    const state = createPiEventState();
+    expect(
+      mapPiEvent(
+        {
+          type: "session",
+          id: "019f194f-e403-7433-b91e-79fc33adb1dc",
+          version: 3,
+          cwd: "/project",
+        },
+        state,
+      ),
+    ).toEqual([]);
+    expect(mapPiEvent({ type: "agent_start" }, state)).toEqual([
+      {
+        type: "session_start",
+        model: "pi",
+        sessionId: "019f194f-e403-7433-b91e-79fc33adb1dc",
+        tools: [],
+      },
     ]);
+    expect(state.cwd).toBe("/project");
+    expect(state.sessionVersion).toBe(3);
   });
 
-  test("updates session model from message_start", () => {
+  test("updates session model from assistant message_start", () => {
     const state = createPiEventState();
+    mapPiEvent({ type: "session", id: "sess-1" }, state);
     expect(mapPiEvent({ type: "agent_start" }, state)).toEqual([
-      { type: "session_start", model: "pi", sessionId: "pi-rpc", tools: [] },
+      { type: "session_start", model: "pi", sessionId: "sess-1", tools: [] },
     ]);
     expect(mapPiEvent({ type: "message_start", message: { model: "gpt-5.5" } }, state)).toEqual([
-      { type: "session_start", model: "gpt-5.5", sessionId: "pi-rpc", tools: [] },
+      { type: "session_start", model: "gpt-5.5", sessionId: "sess-1", tools: [] },
     ]);
     expect(mapPiEvent({ type: "message_start", message: { model: "gpt-5.5" } }, state)).toEqual([]);
   });
@@ -187,7 +139,7 @@ describe("pi event mapping", () => {
     const state = createPiEventState();
     expect(
       mapPiEvent(
-        { type: "message_update", assistantMessageEvent: { type: "text_delta", text: "hel" } },
+        { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hel" } },
         state,
       ),
     ).toEqual([{ type: "text_delta", text: "hel", parentToolUseId: null }]);
@@ -236,7 +188,7 @@ describe("pi event mapping", () => {
     ).toEqual([{ type: "retry", attempt: 2, maxRetries: 5, delayMs: 1000, error: "rate" }]);
   });
 
-  test("emits done from final session stats after agent_end", () => {
+  test("emits done from agent_end fallback usage", () => {
     const state = createPiEventState();
     expect(
       mapPiEvent(
@@ -255,32 +207,16 @@ describe("pi event mapping", () => {
       ),
     ).toEqual([]);
 
-    expect(
-      mapPiEvent(
-        {
-          id: "loop-final-stats",
-          type: "response",
-          command: "get_session_stats",
-          success: true,
-          data: {
-            tokens: { input: 10, output: 20, cacheWrite: 30, cacheRead: 40 },
-            cost: 1.25,
-          },
-        },
-        state,
-      ),
-    ).toEqual([
-      {
-        type: "done",
-        result: "done",
-        costUsd: 1.25,
-        durationMs: 12,
-        usage: { inputTokens: 10, outputTokens: 20, cacheCreationTokens: 30, cacheReadTokens: 40 },
-      },
-    ]);
+    expect(completePendingDone(state)).toEqual({
+      type: "done",
+      result: "done",
+      costUsd: 0.5,
+      durationMs: 12,
+      usage: { inputTokens: 1, outputTokens: 2, cacheCreationTokens: 3, cacheReadTokens: 4 },
+    });
   });
 
-  test("falls back to aggregated assistant usage when final stats fail", () => {
+  test("falls back to aggregated assistant usage", () => {
     const state = createPiEventState();
     expect(
       mapPiEvent(
@@ -299,26 +235,13 @@ describe("pi event mapping", () => {
       ),
     ).toEqual([]);
 
-    expect(
-      mapPiEvent(
-        {
-          id: "loop-final-stats",
-          type: "response",
-          command: "get_session_stats",
-          success: false,
-          error: "stats unavailable",
-        },
-        state,
-      ),
-    ).toEqual([
-      {
-        type: "done",
-        result: "done",
-        costUsd: 0.30000000000000004,
-        durationMs: 0,
-        usage: { inputTokens: 4, outputTokens: 6, cacheCreationTokens: 5, cacheReadTokens: 6 },
-      },
-    ]);
+    expect(completePendingDone(state)).toEqual({
+      type: "done",
+      result: "done",
+      costUsd: 0.30000000000000004,
+      durationMs: 0,
+      usage: { inputTokens: 4, outputTokens: 6, cacheCreationTokens: 5, cacheReadTokens: 6 },
+    });
   });
 
   test("emits errors and unknown events", () => {

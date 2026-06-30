@@ -13,8 +13,8 @@ export { createClaudeAdapter } from "./agents/claude.js";
 export type { ClaudeAdapterOptions } from "./agents/claude.js";
 export { createConfiguredAgent } from "./agents/factory.js";
 export type { CreateConfiguredAgentOptions } from "./agents/factory.js";
-export { createPiRpcAdapter } from "./agents/pi.js";
-export type { PiRpcAdapterOptions } from "./agents/pi.js";
+export { createPiAdapter } from "./agents/pi.js";
+export type { PiAdapterOptions } from "./agents/pi.js";
 export {
   ConfigError,
   findProjectConfigPath,

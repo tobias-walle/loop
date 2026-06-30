@@ -2,7 +2,10 @@ import { type Component, type Focusable, truncateToWidth } from "@mariozechner/p
 import { cyan, dim, dimGray, green } from "../../lib/ansi.js";
 import type { TokenUsage } from "../../lib/types.js";
 import { formatDuration, formatTokens } from "../formatters.js";
-import { InputLine } from "./input-line.js";
+
+const CTRL_C = String.fromCharCode(3);
+const ESC = String.fromCharCode(27);
+const KITTY_CTRL_C = `${ESC}[99;5u`;
 
 interface StatusInfo {
   step?: number;
@@ -16,35 +19,15 @@ interface StatusInfo {
   currentSessionUsage?: TokenUsage;
 }
 
-/**
- * Bottom overlay:
- *   Line 1: separator (─── full width)
- *   Line 2: input field (delegated to InputLine)
- *   Line 3: separator
- *   Line 4: cumulative run stats
- */
+/** Bottom overlay with run stats and minimal Ctrl+C handling. */
 export class StatusBar implements Component, Focusable {
   focused = false;
 
-  readonly input = new InputLine();
+  onInterrupt: (() => void) | undefined;
 
   private status: StatusInfo = {};
   private startTime: number | null = null;
   private hidden = false;
-
-  get onSubmit(): ((message: string) => void) | undefined {
-    return this.input.onSubmit;
-  }
-  set onSubmit(fn: ((message: string) => void) | undefined) {
-    this.input.onSubmit = fn;
-  }
-
-  get onInterrupt(): (() => void) | undefined {
-    return this.input.onInterrupt;
-  }
-  set onInterrupt(fn: (() => void) | undefined) {
-    this.input.onInterrupt = fn;
-  }
 
   setStatus(info: StatusInfo): void {
     this.status = info;
@@ -58,25 +41,21 @@ export class StatusBar implements Component, Focusable {
     this.hidden = true;
   }
 
-  getInputValue(): string {
-    return this.input.getValue();
-  }
-
   invalidate(): void {
     // No caching
   }
 
   render(width: number): string[] {
     if (this.hidden) return [];
-    this.input.focused = this.focused;
     const sep = dimGray("─".repeat(width));
-    const inputLines = this.input.render(width);
     const footerLine = this.buildFooterLine(width);
-    return ["", sep, ...inputLines, sep, footerLine];
+    return ["", sep, footerLine];
   }
 
   handleInput(data: string): void {
-    this.input.handleInput(data);
+    if (data === CTRL_C || data === KITTY_CTRL_C) {
+      this.onInterrupt?.();
+    }
   }
 
   private buildFooterLine(width: number): string {

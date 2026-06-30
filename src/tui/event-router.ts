@@ -17,7 +17,6 @@ import {
   formatRetry,
   formatRunSummary,
   formatStepHeaderLines,
-  formatUserMessage,
 } from "./formatters.js";
 
 export type { ChildContainer, LoopTUIState } from "./event-handlers.js";
@@ -59,7 +58,6 @@ export function createEventRouter(
   ) => void;
   showSessionInfo: (sessionId: string) => void;
   showRunSummary: (summary: RunSummary) => void;
-  showUserMessage: (text: string) => void;
 } {
   const state: LoopTUIState = {
     containerStack: [root],
@@ -197,12 +195,6 @@ export function createEventRouter(
         if (subContainer) addThinkingIndicator(event.toolUseId, subContainer);
         break;
       }
-      case "user_message": {
-        const container = currentContainer();
-        container.addChild(new Text(formatUserMessage(event.text), 0, 0));
-        requestRender();
-        break;
-      }
       case "task_done":
         removeThinkingIndicator(event.toolUseId);
         handleTaskDone(event, state, requestRender, currentContainer);
@@ -278,12 +270,6 @@ export function createEventRouter(
     requestRender();
   }
 
-  function showUserMessage(text: string): void {
-    const line = formatUserMessage(text);
-    root.addChild(new Text(line, 0, 0));
-    requestRender();
-  }
-
   return {
     state,
     handleEvent,
@@ -291,6 +277,5 @@ export function createEventRouter(
     showCompletion,
     showSessionInfo,
     showRunSummary,
-    showUserMessage,
   };
 }

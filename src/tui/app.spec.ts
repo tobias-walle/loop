@@ -675,16 +675,4 @@ describe("createEventRouter", () => {
     const indentedTexts = textLines.filter((l) => l.startsWith("│ "));
     expect(indentedTexts.length).toBeGreaterThanOrEqual(3);
   });
-
-  test("showUserMessage emits formatted line", () => {
-    const { root, router } = setup();
-
-    router.showUserMessage("fix the CSS");
-
-    expect(root.children).toHaveLength(1);
-    const rendered = renderChild(root, 0);
-    expect(rendered).toContain("›");
-    expect(rendered).toContain("user");
-    expect(rendered).toContain("fix the CSS");
-  });
 });

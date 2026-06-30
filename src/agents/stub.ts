@@ -195,8 +195,6 @@ export function createStubAdapter(scenarios: Scenario | Scenario[]): AgentAdapte
       // Bind to a const so TypeScript knows it's non-null inside the generator
       const scenario = picked;
 
-      const messages: string[] = [];
-
       async function* generateEvents(): AsyncGenerator<AgentEvent> {
         yield {
           type: "session_start",
@@ -246,10 +244,6 @@ export function createStubAdapter(scenarios: Scenario | Scenario[]): AgentAdapte
       return {
         events: generateEvents(),
         exited: Promise.resolve(),
-
-        sendMessage(text: string): void {
-          messages.push(text);
-        },
 
         abort(): void {
           // no-op

@@ -7,6 +7,8 @@ export type PiEventState = {
   sessionStarted: boolean;
   model?: string;
   sessionId: string;
+  cwd?: string;
+  sessionVersion?: number;
   tools: string[];
   pendingDone?: PendingPiDone;
 };
@@ -19,17 +21,22 @@ type PendingPiDone = {
 };
 
 export function createPiEventState(): PiEventState {
-  return { text: "", sessionStarted: false, sessionId: "pi-rpc", tools: [] };
+  return { text: "", sessionStarted: false, sessionId: "pi-json", tools: [] };
 }
 
 export function mapPiEvent(raw: unknown, state: PiEventState): AgentEvent[] {
   if (!isRecord(raw) || typeof raw.type !== "string") return [];
   const type = raw.type;
   switch (type) {
+    case "session":
+      state.sessionId = stringAt(raw, ["id"]) ?? state.sessionId;
+      state.cwd = stringAt(raw, ["cwd"]) ?? state.cwd;
+      state.sessionVersion = numberAt(raw, ["version"]) ?? state.sessionVersion;
+      return [];
     case "agent_start": {
       const model = stringAt(raw, ["model"]) ?? stringAt(raw, ["agent", "model"]) ?? "pi";
       const sessionId =
-        stringAt(raw, ["sessionId"]) ?? stringAt(raw, ["session", "id"]) ?? "pi-rpc";
+        stringAt(raw, ["sessionId"]) ?? stringAt(raw, ["session", "id"]) ?? state.sessionId;
       const tools = arrayOfStrings(raw.tools);
       state.sessionStarted = true;
       state.model = model;
@@ -50,7 +57,7 @@ export function mapPiEvent(raw: unknown, state: PiEventState): AgentEvent[] {
         return [];
       }
       if (raw.success === false) {
-        return [{ type: "error", message: stringAt(raw, ["error"]) ?? "pi RPC command failed" }];
+        return [{ type: "error", message: stringAt(raw, ["error"]) ?? "pi command failed" }];
       }
       return [];
     case "message_update":

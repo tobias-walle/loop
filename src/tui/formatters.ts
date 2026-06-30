@@ -203,7 +203,3 @@ export function formatRetry(attempt: number, maxRetries: number, error: string):
 export function formatError(message: string): string {
   return formatStatusLine("✕", "error", message, boldRed);
 }
-
-export function formatUserMessage(text: string): string {
-  return `${dim("›")} ${cyan("user".padEnd(STATUS_LABEL_WIDTH))} ${text}`;
-}

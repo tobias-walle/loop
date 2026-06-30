@@ -2,10 +2,6 @@
 export const ESC = "\x1b[";
 export const RESET = `${ESC}0m`;
 
-// Bracketed paste mode markers
-export const PASTE_START = "\x1b[200~";
-export const PASTE_END = "\x1b[201~";
-
 export function wrap(code: string, text: string): string {
   return `${ESC}${code}m${text}${RESET}`;
 }
@@ -13,11 +9,6 @@ export function wrap(code: string, text: string): string {
 /** 24-bit foreground color (no width shift from DIM/BOLD). */
 export function rgbFg(r: number, g: number, b: number): string {
   return `${ESC}38;2;${r};${g};${b}m`;
-}
-
-/** Thin line cursor used by the status bar. */
-export function cursorStyle(): string {
-  return `${ESC}2;90m▏${RESET}`;
 }
 
 // High-level helpers

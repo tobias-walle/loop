@@ -114,11 +114,6 @@ async function main(): Promise<void> {
   let runner: ReturnType<typeof createRunner>;
 
   const tui = createLoopTUI({
-    onUserMessage: (message) => {
-      logger.info("User message received", { source: "loop", type: "user_message", message });
-      tui.showUserMessage(message);
-      runner.sendMessage(message);
-    },
     onInterrupt: () => {
       logger.warn("User interrupt received", { source: "loop", type: "interrupt" });
       tui.stop();

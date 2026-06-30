@@ -12,7 +12,6 @@ export interface StepExecutorContext {
   logger: Logger;
   steps: Step[];
   state: PipelineState;
-  pendingMessages: string[];
   isAborted: () => boolean;
   setCurrentSession: (session: AgentSession | null) => void;
   onEvent?: (event: AgentEvent, stepIndex: number) => void;
@@ -80,19 +79,6 @@ export async function executeStep(
     const session = ctx.agent.spawn(prompt, { cwd: ctx.projectRoot });
     ctx.setCurrentSession(session);
     ctx.logger.info(`${stepLabel} - agent spawned`);
-
-    if (ctx.pendingMessages.length > 0) {
-      ctx.logger.debug("Delivering pending messages", {
-        count: ctx.pendingMessages.length,
-        stepIndex,
-        iteration,
-      });
-    }
-    for (const msg of ctx.pendingMessages) {
-      session.sendMessage(msg);
-      ctx.onEvent?.({ type: "user_message", text: msg }, stepIndex);
-    }
-    ctx.pendingMessages.length = 0;
 
     const iterResult = await processAgentEvents(
       {
