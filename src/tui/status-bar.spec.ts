@@ -97,8 +97,32 @@ describe("StatusBar", () => {
         },
       });
       const [, , footer] = renderPlain(bar);
-      expect(footer).toContain("$0.03 / $0.11");
-      expect(footer).toContain("3.0k / 12.0k tokens");
+      expect(footer).toContain("$0.03 | $0.11");
+      expect(footer).toContain("3.0k | 12.0k tokens");
+    });
+
+    it("omits current session stats when they match totals", () => {
+      const bar = new StatusBar();
+      bar.setStatus({
+        costUsd: 0.03,
+        currentSessionCostUsd: 0.03,
+        usage: {
+          inputTokens: 2000,
+          outputTokens: 1000,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+        },
+        currentSessionUsage: {
+          inputTokens: 2000,
+          outputTokens: 1000,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+        },
+      });
+      const [, , footer] = renderPlain(bar);
+      expect(footer).toContain("$0.03");
+      expect(footer).toContain("3.0k tokens");
+      expect(footer).not.toContain("|");
     });
   });
 

@@ -68,19 +68,18 @@ export class StatusBar implements Component, Focusable {
     }
 
     if (s.costUsd != null) {
-      const cost =
-        s.currentSessionCostUsd != null
-          ? `$${s.currentSessionCostUsd.toFixed(2)} / $${s.costUsd.toFixed(2)}`
-          : `$${s.costUsd.toFixed(2)}`;
-      parts.push(green(cost));
+      const total = `$${s.costUsd.toFixed(2)}`;
+      const current =
+        s.currentSessionCostUsd != null ? `$${s.currentSessionCostUsd.toFixed(2)}` : undefined;
+      parts.push(green(current && current !== total ? `${current} | ${total}` : total));
     }
 
     if (s.usage != null) {
-      const tokens =
-        s.currentSessionUsage != null
-          ? `${formatTokens(s.currentSessionUsage).replace(" tokens", "")} / ${formatTokens(s.usage)}`
-          : formatTokens(s.usage);
-      parts.push(cyan(tokens));
+      const total = formatTokens(s.usage);
+      const current = s.currentSessionUsage
+        ? formatTokens(s.currentSessionUsage).replace(" tokens", "")
+        : undefined;
+      parts.push(cyan(current && `${current} tokens` !== total ? `${current} | ${total}` : total));
     }
 
     const sep = dim(" · ");
