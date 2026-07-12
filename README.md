@@ -16,8 +16,6 @@ bun run build
 bun link
 ```
 
-> ⚠️ **Container required.** Loop runs Claude Code with `--dangerously-skip-permissions`, so it refuses to start outside a sandbox. Run it inside Docker / Podman, a devcontainer, GitHub Codespaces, or a Kubernetes pod.
-
 ## Usage
 
 ```bash

@@ -3,12 +3,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createConfiguredAgent } from "./agents/factory.js";
-import { boldRed, dim } from "./lib/ansi.js";
 import { ConfigError, type LoopRuntimeConfig, loadLoopConfig } from "./lib/config/index.js";
 import { createLogger } from "./lib/logging.js";
 import { ParseError, formatHelp, parseArgs } from "./lib/parser.js";
 import { createRunner } from "./lib/runner.js";
-import { isSandboxed } from "./lib/sandbox.js";
 import { createSessionDir } from "./lib/session.js";
 import { DEFAULT_TEMPLATE } from "./lib/template.js";
 import type { LoopConfig } from "./lib/types.js";
@@ -52,15 +50,6 @@ function handlePreTuiCommand(config: LoopConfig): boolean {
   return false;
 }
 
-function checkSandbox(): void {
-  if (!isSandboxed()) {
-    console.error(
-      `${boldRed("\n  ▲ SECURITY WARNING\n")}\n  loop gives coding agents tool access to your project and shell.\n  Use it only in a container or trusted sandbox.\n\n${dim("    - Docker / Podman\n")}${dim("    - Devcontainers\n")}${dim("    - GitHub Codespaces\n")}${dim("    - Kubernetes pods\n")}`,
-    );
-    process.exit(1);
-  }
-}
-
 async function main(): Promise<void> {
   let config: LoopConfig;
   try {
@@ -74,8 +63,6 @@ async function main(): Promise<void> {
   }
 
   if (handlePreTuiCommand(config)) return;
-
-  checkSandbox();
 
   const sessionDir = createSessionDir(process.cwd());
   const logger = createLogger(sessionDir);
