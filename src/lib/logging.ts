@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { getSessionEventsPath } from "./storage-paths.js";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -33,7 +34,7 @@ function appendJsonLine(logPath: string, entry: LogEntry): void {
 export const noopLogger: Logger = { debug() {}, info() {}, warn() {}, error() {} };
 
 export function createLogger(sessionDir: string): Logger {
-  const logPath = path.join(sessionDir, "session.jsonl");
+  const logPath = getSessionEventsPath(sessionDir);
 
   function log(level: LogLevel, message: string, data?: Record<string, unknown>): void {
     const entry: LogEntry = {

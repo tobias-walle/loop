@@ -30,11 +30,15 @@ Key design principle: The runner and TUI never import agent-specific code. Every
 
 Architecture decisions are documented in `docs/adr/`.
 
-## Session Logging
+## Persistence
 
-Each run creates a session directory at `.loop/sessions/<date>-<hash>/` containing a `session.jsonl` file. This is a structured JSONL log with full debug coverage of the run lifecycle.
-
-Each line is a JSON object with at least `timestamp`, `level` (`debug`|`info`|`warn`|`error`), and `message`, plus arbitrary structured data fields. Covers: config parsing, template loading, step/iteration lifecycle, agent events, tool calls, retries, rate limits, abort handling, and run summaries.
+- Define storage names and path composition only in `src/lib/storage-paths.ts`.
+- Keep only project inputs in `.loop/`: `config.toml`, `LOOP.md`, and `recipes/`.
+- Resolve personal config via `LOOP_CONFIG_HOME`, XDG config, then the platform default.
+- Resolve runtime state via `LOOP_STATE_HOME`, XDG state, then the platform default.
+- Store sessions at `<state-home>/sessions/<project-slug>/<session-id>/`.
+- Keep `session.json` small and queryable. Append lifecycle records to `events.jsonl`.
+- Never write runtime state, caches, or logs into the project.
 
 ## CLI Usage
 
@@ -54,7 +58,7 @@ loop "Improve coverage" --until "Coverage above 80%" --max 5
 # Repeat a group of tasks
 loop [ "Write code" "Review" ] --repeat 3
 
-# Create a LOOP.md template in the current directory
+# Create a .loop/LOOP.md project template
 loop init
 ```
 

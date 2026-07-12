@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { getUserConfigPath as resolveUserConfigPath } from "../storage-paths";
 import { ConfigError, findProjectConfigPath, getUserConfigPath, loadLoopConfig } from "./index";
 
 function tmpDir(): string {
@@ -48,10 +49,8 @@ describe("config loading", () => {
     expect(loaded.config.agent).toBe("pi");
   });
 
-  test("falls back to ~/.config/loop/config.toml", () => {
-    expect(getUserConfigPath(env())).toBe(
-      path.join(os.homedir(), ".config", "loop", "config.toml"),
-    );
+  test("uses the platform config path", () => {
+    expect(getUserConfigPath(env())).toBe(resolveUserConfigPath(env()));
   });
 
   test("finds nearest project config walking upward and does not merge multiple", () => {

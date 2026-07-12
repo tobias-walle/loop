@@ -1,21 +1,26 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getUserConfigPath } from "../config/paths.js";
+import {
+  getProjectRecipePath as resolveProjectRecipePath,
+  getProjectRecipesDir as resolveProjectRecipesDir,
+  getUserRecipePath as resolveUserRecipePath,
+  getUserRecipesDir as resolveUserRecipesDir,
+} from "../storage-paths.js";
 
-export const RECIPE_EXTENSION = ".yaml";
+export { RECIPE_EXTENSION } from "../storage-paths.js";
 
 export function getUserRecipesDir(env: NodeJS.ProcessEnv = process.env): string {
-  return path.join(path.dirname(getUserConfigPath(env)), "recipes");
+  return resolveUserRecipesDir(env);
 }
 
 export function getUserRecipePath(name: string, env: NodeJS.ProcessEnv = process.env): string {
-  return path.join(getUserRecipesDir(env), `${name}${RECIPE_EXTENSION}`);
+  return resolveUserRecipePath(name, env);
 }
 
 export function findProjectRecipesDir(cwd: string = process.cwd()): string | undefined {
   let current = path.resolve(cwd);
   while (true) {
-    const candidate = path.join(current, ".loop", "recipes");
+    const candidate = resolveProjectRecipesDir(current);
     if (fs.existsSync(candidate)) return candidate;
     const parent = path.dirname(current);
     if (parent === current) return undefined;
@@ -24,7 +29,7 @@ export function findProjectRecipesDir(cwd: string = process.cwd()): string | und
 }
 
 export function getProjectRecipePath(name: string, cwd: string = process.cwd()): string {
-  return path.join(path.resolve(cwd), ".loop", "recipes", `${name}${RECIPE_EXTENSION}`);
+  return resolveProjectRecipePath(name, cwd);
 }
 
 export function findProjectRecipePath(
@@ -33,7 +38,7 @@ export function findProjectRecipePath(
 ): string | undefined {
   let current = path.resolve(cwd);
   while (true) {
-    const candidate = path.join(current, ".loop", "recipes", `${name}${RECIPE_EXTENSION}`);
+    const candidate = resolveProjectRecipePath(name, current);
     if (fs.existsSync(candidate)) return candidate;
     const parent = path.dirname(current);
     if (parent === current) return undefined;

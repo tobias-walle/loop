@@ -1,5 +1,5 @@
 import * as fs from "node:fs";
-import * as path from "node:path";
+import { getProjectTemplatePath } from "./storage-paths.js";
 import type { TemplateContext } from "./types";
 
 export const DEFAULT_TEMPLATE = `# Loop Context
@@ -98,14 +98,14 @@ export function renderTemplate(template: string, context: TemplateContext): stri
 }
 
 /**
- * Load the LOOP.md template from the project root, falling back to the
- * built-in default shipped with the package.
+ * Load the .loop/LOOP.md project template, falling back to the built-in
+ * default shipped with the package.
  */
 export function loadTemplate(projectRoot: string): {
   template: string;
   source: "user" | "default";
 } {
-  const userTemplate = path.join(projectRoot, "LOOP.md");
+  const userTemplate = getProjectTemplatePath(projectRoot);
   try {
     return { template: fs.readFileSync(userTemplate, "utf-8"), source: "user" };
   } catch {

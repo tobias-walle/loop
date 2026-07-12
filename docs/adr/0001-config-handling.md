@@ -28,11 +28,16 @@ Reasons:
 
 ### Locations
 
-Load user config from XDG-aware paths:
+Load user config from platform-aware, XDG-compatible paths:
 
 1. If `LOOP_CONFIG_HOME` is set: `$LOOP_CONFIG_HOME/config.toml`
 2. Else if `XDG_CONFIG_HOME` is set: `$XDG_CONFIG_HOME/loop/config.toml`
-3. Else: `~/.config/loop/config.toml`
+3. Else use the platform default:
+   - Linux: `~/.config/loop/config.toml`
+   - macOS: `~/Library/Application Support/loop/config/config.toml`
+   - Windows: `%APPDATA%\\loop\\config.toml`
+
+Runtime state is separate from configuration. Sessions use `LOOP_STATE_HOME`, then `$XDG_STATE_HOME/loop`, then the platform state default.
 
 Load project config by walking upward from the current working directory and using the nearest:
 

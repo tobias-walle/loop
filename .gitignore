@@ -4,4 +4,8 @@ bun.lock
 loop.log
 core
 *.tgz
-.loop/
+.loop/*
+!.loop/config.toml
+!.loop/LOOP.md
+!.loop/recipes/
+!.loop/recipes/**

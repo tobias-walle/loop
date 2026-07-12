@@ -62,7 +62,7 @@ loop "Create an about page" [ "Review code" "Fix issues" ] --until "No issues" -
 
 ### Recipes
 
-Recipes are reusable YAML templates for steps. Project recipes live in `.loop/recipes/<name>.yaml`. User recipes live next to the user config, for example `$LOOP_CONFIG_HOME/recipes/<name>.yaml` or `~/.config/loop/recipes/<name>.yaml`. Project recipes take precedence.
+Recipes are reusable YAML templates for steps. Project recipes live in `.loop/recipes/<name>.yaml`. Personal recipes live in the user config directory under `recipes/<name>.yaml`. Project recipes take precedence.
 
 Create a starter recipe:
 
@@ -118,7 +118,7 @@ Flags bind to the immediately preceding task or `]`.
 
 ### Configuration
 
-Loop reads TOML config from `$LOOP_CONFIG_HOME/config.toml`, `$XDG_CONFIG_HOME/loop/config.toml`, or `~/.config/loop/config.toml`, plus the nearest project `.loop/config.toml`.
+Loop combines personal config with the nearest project `.loop/config.toml`. Set `LOOP_CONFIG_HOME` to choose the personal config directory. When it is unset, Loop uses `$XDG_CONFIG_HOME/loop` or the platform default documented under [Files and storage](#files-and-storage).
 
 ```toml
 agent = "pi"
@@ -154,7 +154,57 @@ loop "Fix tests" --arg permission-mode=bypassPermissions
 
 ### Project template
 
-Run `loop init` to generate a `LOOP.md` file in your project root. This file controls how the agent is prompted inside loops. It uses `{{placeholder}}` and `{{#if var}}...{{/if}}` syntax. Commit it to your repo and customize it per project.
+Run `loop init` to generate `.loop/LOOP.md`. This file controls how the agent is prompted inside loops. It uses `{{placeholder}}` and `{{#if var}}...{{/if}}` syntax. Commit it to your repo and customize it per project.
+
+## Files and storage
+
+Loop keeps project configuration in `.loop/`, personal configuration in the platform config directory, and runtime history in the platform state directory. Running Loop does not add session logs to your project.
+
+### Project files
+
+```text
+.loop/
+├── config.toml      # Shared project defaults
+├── LOOP.md          # Prompt template used for each task
+└── recipes/         # Reusable project workflows
+    └── review.yaml
+```
+
+These are project inputs. They can be committed when the team should share them.
+
+### Personal config files
+
+```text
+<config-home>/
+├── config.toml      # Personal agent and command defaults
+└── recipes/         # Recipes available in every project
+```
+
+| Platform | Default config home |
+|---|---|
+| Linux | `~/.config/loop` |
+| macOS | `~/Library/Application Support/loop/config` |
+| Windows | `%APPDATA%\loop` |
+
+`LOOP_CONFIG_HOME` overrides the whole config home. `$XDG_CONFIG_HOME/loop` takes precedence over the platform default when `XDG_CONFIG_HOME` is set.
+
+### Session state
+
+```text
+<state-home>/sessions/<project-slug>/<session-id>/
+├── session.json     # Project path, timestamps, and completion status
+└── events.jsonl     # Append-only structured lifecycle events
+```
+
+| Platform | Default state home |
+|---|---|
+| Linux | `~/.local/state/loop` |
+| macOS | `~/Library/Application Support/loop/state` |
+| Windows | `%LOCALAPPDATA%\loop` |
+
+`LOOP_STATE_HOME` overrides the whole state home. `$XDG_STATE_HOME/loop` takes precedence over the platform default when `XDG_STATE_HOME` is set.
+
+Project slugs combine the folder name with a short hash, so projects with the same name do not share sessions. Session IDs start with a UTC timestamp, making directories sortable. Loop retains sessions until you delete them.
 
 ## How it works
 
@@ -171,4 +221,3 @@ bun test              # run tests only
 bun run build         # bundle to dist/
 ```
 
-Sessions are logged to `.loop/sessions/<date>-<hash>/session.jsonl` as structured JSONL covering the full run lifecycle (config, steps, iterations, agent events, tool calls, retries, rate limits, aborts, and summaries).

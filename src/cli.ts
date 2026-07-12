@@ -14,21 +14,23 @@ import {
   validateRecipeName,
 } from "./lib/recipes/index.js";
 import { createRunner } from "./lib/runner.js";
-import { createSessionDir } from "./lib/session.js";
+import { createSessionDir, updateSessionStatus } from "./lib/session.js";
+import { getProjectTemplatePath } from "./lib/storage-paths.js";
 import { DEFAULT_TEMPLATE } from "./lib/template.js";
 import type { LoopConfig } from "./lib/types.js";
 import { createLoopTUI } from "./tui/loop-tui.js";
 
 function runInit(): void {
-  const dest = path.join(process.cwd(), "LOOP.md");
+  const dest = getProjectTemplatePath(process.cwd());
 
   if (fs.existsSync(dest)) {
-    console.log("LOOP.md already exists in this directory. Skipping.");
+    console.log(".loop/LOOP.md already exists. Skipping.");
     return;
   }
 
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.writeFileSync(dest, DEFAULT_TEMPLATE, "utf-8");
-  console.log("Created LOOP.md in the current directory.");
+  console.log("Created .loop/LOOP.md.");
 }
 
 function runInitRecipe(name: string | undefined): void {
@@ -165,6 +167,7 @@ async function main(): Promise<void> {
   const tui = createLoopTUI({
     onInterrupt: () => {
       logger.warn("User interrupt received", { source: "loop", type: "interrupt" });
+      updateSessionStatus(sessionDir, "aborted");
       tui.stop();
       runner.abort();
       process.exit(130);
@@ -249,6 +252,7 @@ async function main(): Promise<void> {
 
   try {
     const result = await runner.run();
+    updateSessionStatus(sessionDir, result.success ? "completed" : "failed");
     if (!result.success) {
       const failedStep = result.stepResults.find((s) => s.exitReason === "error");
       logger.warn("Run finished with failure", {
@@ -269,6 +273,7 @@ async function main(): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error("Run error", { source: "loop", type: "run_error", error: message });
+    updateSessionStatus(sessionDir, "failed");
     tui.handleEvent({ type: "error", message }, 0);
   }
 

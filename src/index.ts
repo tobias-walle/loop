@@ -84,7 +84,9 @@ export type {
 export { createLoopTUI } from "./tui/loop-tui.js";
 export type { LoopTUI, LoopTUIOptions } from "./tui/loop-tui.js";
 export { isSandboxed } from "./lib/sandbox.js";
-export { createSessionDir } from "./lib/session.js";
+export { createSessionDir, getProjectSlug, updateSessionStatus } from "./lib/session.js";
+export type { SessionMetadata, SessionStatus } from "./lib/session.js";
+export { getUserConfigDir, getUserStateDir } from "./lib/storage-paths.js";
 export { createLogger, noopLogger } from "./lib/logging.js";
 export type { Logger } from "./lib/logging.js";
 export { extractExitMarker } from "./lib/exit-marker.js";

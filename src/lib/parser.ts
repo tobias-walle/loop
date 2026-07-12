@@ -8,7 +8,7 @@ export class ParseError extends Error {
 }
 
 const COMMANDS = {
-  init: "Create a LOOP.md template in the current directory",
+  init: "Create a .loop/LOOP.md project template",
   "init-recipe <name>": "Create a YAML recipe template in .loop/recipes",
 } as const;
 
@@ -39,7 +39,7 @@ const EXAMPLES = [
   ["loop --recipe implement --plan ./PLAN.md", "Run a named recipe with a named argument"],
   ["loop -r implement ./PLAN.md", "Run a named recipe with a positional argument"],
   ["loop init-recipe implement", "Create a YAML recipe template"],
-  ["loop init", "Create a LOOP.md template"],
+  ["loop init", "Create a .loop/LOOP.md project template"],
 ] as const;
 
 export function formatHelp(): string {

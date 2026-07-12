@@ -199,16 +199,17 @@ describe("loadTemplate", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("loads LOOP.md from project root when it exists", () => {
+  test("loads .loop/LOOP.md when it exists", () => {
     const customTemplate = "# Custom\n{{task}}";
-    fs.writeFileSync(path.join(tmpDir, "LOOP.md"), customTemplate);
+    fs.mkdirSync(path.join(tmpDir, ".loop"));
+    fs.writeFileSync(path.join(tmpDir, ".loop", "LOOP.md"), customTemplate);
 
     const result = loadTemplate(tmpDir);
     expect(result.template).toBe(customTemplate);
     expect(result.source).toBe("user");
   });
 
-  test("falls back to built-in default when LOOP.md is missing", () => {
+  test("falls back to built-in default when .loop/LOOP.md is missing", () => {
     const result = loadTemplate(tmpDir);
     expect(result.template).toContain("# Loop Context");
     expect(result.template).toContain("{{task}}");
