@@ -6,6 +6,13 @@ import { createConfiguredAgent } from "./agents/factory.js";
 import { ConfigError, type LoopRuntimeConfig, loadLoopConfig } from "./lib/config/index.js";
 import { createLogger } from "./lib/logging.js";
 import { ParseError, formatHelp, parseArgs } from "./lib/parser.js";
+import {
+  RecipeError,
+  createDefaultRecipeTemplate,
+  getProjectRecipePath,
+  loadRecipe,
+  validateRecipeName,
+} from "./lib/recipes/index.js";
 import { createRunner } from "./lib/runner.js";
 import { createSessionDir } from "./lib/session.js";
 import { DEFAULT_TEMPLATE } from "./lib/template.js";
@@ -24,6 +31,32 @@ function runInit(): void {
   console.log("Created LOOP.md in the current directory.");
 }
 
+function runInitRecipe(name: string | undefined): void {
+  if (!name) {
+    console.error("Error: init-recipe requires a name. Usage: loop init-recipe <name>");
+    process.exit(1);
+  }
+
+  try {
+    validateRecipeName(name);
+  } catch (err) {
+    if (err instanceof RecipeError) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+
+  const dest = getProjectRecipePath(name, process.cwd());
+  if (fs.existsSync(dest)) {
+    console.log(`${path.relative(process.cwd(), dest)} already exists. Skipping.`);
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, createDefaultRecipeTemplate(name), "utf-8");
+  console.log(`Created ${path.relative(process.cwd(), dest)}.`);
+}
 function handlePreTuiCommand(config: LoopConfig): boolean {
   if (config.command === "help") {
     console.log(formatHelp());
@@ -42,9 +75,9 @@ function handlePreTuiCommand(config: LoopConfig): boolean {
     return true;
   }
 
-  if (config.steps.length === 0) {
-    console.error('Error: No tasks provided. Usage: loop "task"');
-    process.exit(1);
+  if (config.command === "init-recipe") {
+    runInitRecipe(config.initRecipeName);
+    return true;
   }
 
   return false;
@@ -63,6 +96,25 @@ async function main(): Promise<void> {
   }
 
   if (handlePreTuiCommand(config)) return;
+
+  let loadedRecipe: ReturnType<typeof loadRecipe> | undefined;
+  if (config.recipe) {
+    try {
+      loadedRecipe = loadRecipe(config.recipe.name, config.recipe.args);
+      config = { ...config, steps: loadedRecipe.steps };
+    } catch (err) {
+      if (err instanceof RecipeError) {
+        console.error(`Error: ${err.message}`);
+        process.exit(1);
+      }
+      throw err;
+    }
+  }
+
+  if (config.steps.length === 0) {
+    console.error('Error: No tasks provided. Usage: loop "task" or loop --recipe <name>');
+    process.exit(1);
+  }
 
   const sessionDir = createSessionDir(process.cwd());
   const logger = createLogger(sessionDir);
@@ -84,11 +136,21 @@ async function main(): Promise<void> {
   });
 
   logger.info("Session initialized", { source: "loop", type: "session_init", sessionDir });
+  if (loadedRecipe) {
+    logger.info("Recipe loaded", {
+      source: "loop",
+      type: "recipe_loaded",
+      recipeName: loadedRecipe.name,
+      recipePath: loadedRecipe.path,
+      argumentNames: Object.keys(loadedRecipe.values),
+    });
+  }
   logger.info("Config parsed", {
     source: "loop",
     type: "config_parsed",
     stepCount: config.steps.length,
     commandType: config.command,
+    recipeName: config.recipe?.name,
     agent: runtimeConfig.agent,
     passthroughArgCount: config.passthroughArgs?.length ?? 0,
   });
@@ -118,6 +180,7 @@ async function main(): Promise<void> {
 
   runner = createRunner(config.steps, {
     agent: adapter,
+    agentName: runtimeConfig.agent,
     projectRoot: process.cwd(),
     logger,
     onEvent: (event, stepIndex) => {
@@ -144,6 +207,9 @@ async function main(): Promise<void> {
         task,
         isLoop ? iteration : undefined,
         maxDisplay,
+        undefined,
+        runtimeConfig.agent,
+        { ...runtimeConfig.agents[runtimeConfig.agent].args, ...(step.args ?? {}) },
       );
       const state = runner.getState();
       tui.updateStatus({

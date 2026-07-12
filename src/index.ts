@@ -32,6 +32,42 @@ export type {
   LoopRuntimeConfig,
 } from "./lib/config/index.js";
 export { ParseError, formatHelp, parseArgs } from "./lib/parser.js";
+export {
+  RECIPE_EXTENSION,
+  RecipeError,
+  createDefaultRecipeTemplate,
+  findProjectRecipePath,
+  findProjectRecipesDir,
+  findRecipePath,
+  getProjectRecipePath,
+  getUserRecipePath,
+  getUserRecipesDir,
+  loadRecipe,
+  readRecipeFile,
+  renderRecipeSteps,
+  recipeAgentArgsSchema,
+  recipeArgumentNameSchema,
+  recipeArgumentSchema,
+  recipeArgumentTypeSchema,
+  recipeFileSchema,
+  recipeGroupStepSchema,
+  recipeNameSchema,
+  recipeStepSchema,
+  recipeTaskStepSchema,
+  renderRecipeTemplate,
+  resolveRecipeArguments,
+  validateRecipeName,
+} from "./lib/recipes/index.js";
+export type {
+  LoadedRecipe,
+  LoadRecipeOptions,
+  RecipeArgument,
+  RecipeArgumentType,
+  RecipeArgumentValue,
+  RecipeArgumentValues,
+  RecipeFile,
+  RecipeStepFile,
+} from "./lib/recipes/index.js";
 export { createRunner } from "./lib/runner.js";
 export type { RunnerOptions } from "./lib/runner.js";
 export { DEFAULT_TEMPLATE, loadTemplate, renderTemplate } from "./lib/template.js";

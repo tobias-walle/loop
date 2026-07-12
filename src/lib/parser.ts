@@ -9,14 +9,17 @@ export class ParseError extends Error {
 
 const COMMANDS = {
   init: "Create a LOOP.md template in the current directory",
+  "init-recipe <name>": "Create a YAML recipe template in .loop/recipes",
 } as const;
 
 const FLAGS = {
   "--until <condition>": "Loop until the agent signals the condition is met",
   "--repeat <n>": "Repeat the task exactly n times",
   "--max <n>": "Safety cap for --until loops (max iterations)",
+  "--arg <flag[=value]>": "Pass an agent flag for this task or group",
   "--agent <claude|pi>": "Agent backend to use",
-  "--": "Pass remaining args to the selected agent",
+  "--recipe <name>, -r <name>": "Run a named YAML recipe from .loop/recipes or user recipes",
+  "--": "Pass remaining raw args to the selected agent",
   "--help, -h": "Show this help message",
   "--version, -v": "Show version number",
 } as const;
@@ -26,14 +29,22 @@ const EXAMPLES = [
   ['loop "Write tests" "Review code"', "Run tasks sequentially"],
   ['loop "Fix lint errors" --repeat 3', "Repeat a task 3 times"],
   ['loop "Improve coverage" --until "Coverage above 80%" --max 5', "Loop with a condition and cap"],
-  ['loop --agent pi "Fix tests" -- --profile fast', "Use pi and pass args to it"],
+  ['loop "Review" --arg permission-mode=auto', "Pass an agent flag to one step"],
+  [
+    'loop "Fix" --arg permission-mode=bypassPermissions',
+    "Override Claude permission mode for one step",
+  ],
+  ['loop --agent pi "Fix tests" -- --profile fast', "Use pi and pass raw args to it"],
   ['loop [ "Write code" "Review" ] --repeat 3', "Repeat a group of tasks"],
+  ["loop --recipe implement --plan ./PLAN.md", "Run a named recipe with a named argument"],
+  ["loop -r implement ./PLAN.md", "Run a named recipe with a positional argument"],
+  ["loop init-recipe implement", "Create a YAML recipe template"],
   ["loop init", "Create a LOOP.md template"],
 ] as const;
 
 export function formatHelp(): string {
   const lines: string[] = [
-    "Usage: loop <tasks...> [flags]",
+    "Usage: loop <tasks...> [flags] | loop --recipe <name> [recipe-args...] | loop init-recipe <name>",
     "",
     "Run AI agent tasks in sequence, loops, or groups.",
     "",
@@ -84,21 +95,54 @@ export function parseArgs(args: string[]): LoopConfig {
 
   let agent: LoopConfig["agent"];
   let i = 0;
-  while (i < loopArgs.length && loopArgs[i] === "--agent") {
-    if (i + 1 >= loopArgs.length) {
-      throw new ParseError("--agent requires a value. Usage: --agent <claude|pi>");
+  while (i < loopArgs.length) {
+    const arg = loopArgs[i];
+    if (arg === "--agent") {
+      if (i + 1 >= loopArgs.length) {
+        throw new ParseError("--agent requires a value. Usage: --agent <claude|pi>");
+      }
+      const value = loopArgs[i + 1];
+      if (value !== "claude" && value !== "pi") {
+        throw new ParseError(`--agent must be "claude" or "pi", got "${value}".`);
+      }
+      agent = value;
+      i += 2;
+      continue;
     }
-    const value = loopArgs[i + 1];
-    if (value !== "claude" && value !== "pi") {
-      throw new ParseError(`--agent must be "claude" or "pi", got "${value}".`);
+
+    if (arg === "--recipe" || arg === "-r") {
+      if (i + 1 >= loopArgs.length || loopArgs[i + 1].startsWith("-")) {
+        throw new ParseError(`${arg} requires a recipe name. Usage: ${arg} <name>`);
+      }
+      return withGlobalOptions(
+        { steps: [], recipe: { name: loopArgs[i + 1], args: loopArgs.slice(i + 2) } },
+        agent,
+        passthroughArgs,
+      );
     }
-    agent = value;
-    i += 2;
+
+    break;
   }
 
   // Handle subcommands
   if (loopArgs[i] === "init") {
     return withGlobalOptions({ steps: [], command: "init" }, agent, passthroughArgs);
+  }
+
+  if (loopArgs[i] === "init-recipe") {
+    if (i + 1 >= loopArgs.length || loopArgs[i + 1].startsWith("-")) {
+      throw new ParseError("init-recipe requires a name. Usage: loop init-recipe <name>");
+    }
+    if (i + 2 < loopArgs.length) {
+      throw new ParseError(
+        `init-recipe accepts exactly one name, got extra argument "${loopArgs[i + 2]}".`,
+      );
+    }
+    return withGlobalOptions(
+      { steps: [], command: "init-recipe", initRecipeName: loopArgs[i + 1] },
+      agent,
+      passthroughArgs,
+    );
   }
 
   if (i >= loopArgs.length) {
@@ -202,6 +246,14 @@ function consumeFlags(args: string[], startIndex: number, step: Step): number {
       }
       step.max = value;
       pos++;
+    } else if (flag === "--arg") {
+      if (pos + 1 >= args.length) {
+        throw new ParseError("--arg requires a flag. Usage: --arg permission-mode=auto");
+      }
+      pos++;
+      const parsed = parseAgentArg(args[pos]);
+      step.args = { ...(step.args ?? {}), [parsed.name]: parsed.value };
+      pos++;
     } else {
       throw new ParseError(`Unknown flag "${flag}".`);
     }
@@ -225,4 +277,19 @@ function consumeFlags(args: string[], startIndex: number, step: Step): number {
   }
 
   return pos;
+}
+
+function parseAgentArg(raw: string): { name: string; value: string | boolean } {
+  const equals = raw.indexOf("=");
+  const name = equals === -1 ? raw : raw.slice(0, equals);
+  const value = equals === -1 ? true : raw.slice(equals + 1);
+
+  if (!name || name.startsWith("-")) {
+    throw new ParseError(`--arg expects flag or flag=value without leading dashes, got "${raw}".`);
+  }
+  if (equals !== -1 && value === "") {
+    throw new ParseError(`--arg value for "${name}" cannot be empty.`);
+  }
+
+  return { name, value };
 }

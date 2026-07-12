@@ -31,6 +31,7 @@
   "dependencies": {
     "@mariozechner/pi-tui": "^0.63.1",
     "smol-toml": "^1.6.1",
+    "yaml": "^2.9.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

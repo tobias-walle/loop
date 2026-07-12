@@ -34,8 +34,18 @@ loop "Work on next task in PLAN.md" --until "All tasks are done" --max 10
 # Fixed repeat
 loop "Run the test suite and fix failures" --repeat 3
 
-# Use pi for one run and pass pi-specific args
+# Use pi for one run and pass raw pi-specific args
 loop --agent pi "Fix tests" -- --profile fast
+
+# Override agent flags for one step
+loop "Review safely" --arg permission-mode=auto "Fix with bypass" --arg permission-mode=bypassPermissions
+
+# Create a recipe template
+loop init-recipe implement
+
+# Run a named recipe
+loop --recipe implement --plan ./PLAN.md
+loop -r implement ./PLAN.md
 ```
 
 ### Grouping with brackets
@@ -50,6 +60,48 @@ loop "Create an about page" [ "Review code" "Fix issues" ] --repeat 3
 loop "Create an about page" [ "Review code" "Fix issues" ] --until "No issues" --max 10
 ```
 
+### Recipes
+
+Recipes are reusable YAML templates for steps. Project recipes live in `.loop/recipes/<name>.yaml`. User recipes live next to the user config, for example `$LOOP_CONFIG_HOME/recipes/<name>.yaml` or `~/.config/loop/recipes/<name>.yaml`. Project recipes take precedence.
+
+Create a starter recipe:
+
+```bash
+loop init-recipe implement
+```
+
+Recipe files are validated with a Zod schema before they run.
+
+```yaml
+# .loop/recipes/implement.yaml
+description: Implement a plan phase by phase
+
+arguments:
+  - name: plan
+    description: Plan file to implement
+    type: file
+
+steps:
+  - task: Use the implement skill with the next phase in $PLAN. Commit and stop after every phase
+    until: All phases are done and only manual verification remains
+    args:
+      permission-mode: auto
+
+  - tasks:
+      - Review the changes
+      - Correct the findings
+    repeat: 2
+```
+
+Run it with a named or positional argument:
+
+```bash
+loop --recipe implement --plan ./my-plan.md
+loop -r implement ./my-plan.md
+```
+
+Recipe steps support the same task, group, `until`, `repeat`, `max`, and `args` features as CLI steps. Argument types are `string`, `path`, `file`, `directory`, `integer`, `number`, and `boolean`. Use `$PLAN`, `${PLAN}`, or `{{plan}}` in step strings.
+
 ### Flags
 
 Flags bind to the immediately preceding task or `]`.
@@ -59,8 +111,10 @@ Flags bind to the immediately preceding task or `]`.
 | `--until "condition"` | Repeat until the condition is met |
 | `--repeat N` | Repeat exactly N times |
 | `--max N` | Safety cap for `--until` loops |
+| `--arg flag[=value]` | Pass an agent flag to the current task or group |
 | `--agent claude|pi` | Select the agent backend for this run |
-| `--` | Pass remaining args to the selected agent |
+| `--recipe NAME`, `-r NAME` | Run a named recipe |
+| `--` | Pass remaining raw args to the selected agent |
 
 ### Configuration
 
@@ -72,11 +126,31 @@ agent = "pi"
 [agents.pi]
 command = "pi"
 model = "sonnet"
-args = ["--profile", "fast"]
 env = { PI_OFFLINE = "1" }
+
+[agents.pi.args]
+profile = "fast"
+
+[agents.claude.args]
+permission-mode = "auto"
 ```
 
 Precedence is defaults, user config, project config, environment variables, then CLI flags. Supported environment overrides are `LOOP_AGENT`, `LOOP_PI_COMMAND`, `LOOP_PI_MODEL`, `LOOP_CLAUDE_COMMAND`, and `LOOP_CLAUDE_MODEL`.
+
+Agent args use TOML tables. Keys map directly to CLI flags without case changes. String values render as `--flag value`, `true` renders as `--flag`, and `false` omits the flag.
+
+```toml
+[agents.claude.args]
+permission-mode = "bypassPermissions"
+some-boolean-flag = true
+disabled-flag = false
+```
+
+Claude defaults to `permission-mode = "auto"`. To use permission bypass behavior, set `permission-mode = "bypassPermissions"` globally or pass it for a single step:
+
+```bash
+loop "Fix tests" --arg permission-mode=bypassPermissions
+```
 
 ### Project template
 

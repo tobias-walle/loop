@@ -24,13 +24,26 @@ describe("parseArgs", () => {
     });
   });
 
-  describe("init subcommand", () => {
+  describe("init subcommands", () => {
     test("parses init command", () => {
       const result = parseArgs(["init"]);
       expect(result).toEqual({
         steps: [],
         command: "init",
       });
+    });
+
+    test("parses init-recipe command", () => {
+      const result = parseArgs(["init-recipe", "implement"]);
+      expect(result).toEqual({
+        steps: [],
+        command: "init-recipe",
+        initRecipeName: "implement",
+      });
+    });
+
+    test("rejects init-recipe without name", () => {
+      expect(() => parseArgs(["init-recipe"])).toThrow("init-recipe requires a name");
     });
   });
 
@@ -69,8 +82,10 @@ describe("parseArgs", () => {
     });
 
     test("includes commands section", () => {
-      expect(formatHelp()).toContain("Commands:");
-      expect(formatHelp()).toContain("init");
+      const help = formatHelp();
+      expect(help).toContain("Commands:");
+      expect(help).toContain("init");
+      expect(help).toContain("init-recipe");
     });
 
     test("includes flags section", () => {
@@ -79,6 +94,7 @@ describe("parseArgs", () => {
       expect(help).toContain("--until");
       expect(help).toContain("--repeat");
       expect(help).toContain("--max");
+      expect(help).toContain("--arg");
     });
 
     test("includes examples section", () => {
@@ -148,6 +164,29 @@ describe("parseArgs", () => {
       });
     });
 
+    test("--arg on a task", () => {
+      const result = parseArgs([
+        "Review",
+        "--arg",
+        "permission-mode=auto",
+        "Fix",
+        "--arg",
+        "permission-mode=bypassPermissions",
+        "--arg",
+        "dangerously-skip-permissions",
+      ]);
+      expect(result).toEqual({
+        steps: [
+          { type: "task", task: "Review", args: { "permission-mode": "auto" } },
+          {
+            type: "task",
+            task: "Fix",
+            args: { "permission-mode": "bypassPermissions", "dangerously-skip-permissions": true },
+          },
+        ],
+      });
+    });
+
     test("--max + --until order does not matter", () => {
       const result = parseArgs(["Fix bugs", "--max", "5", "--until", "Clean"]);
       expect(result).toEqual({
@@ -182,6 +221,13 @@ describe("parseArgs", () => {
             max: 10,
           },
         ],
+      });
+    });
+
+    test("--arg on a group", () => {
+      const result = parseArgs(["[", "Review", "Fix", "]", "--arg", "permission-mode=auto"]);
+      expect(result).toEqual({
+        steps: [{ type: "group", tasks: ["Review", "Fix"], args: { "permission-mode": "auto" } }],
       });
     });
   });
@@ -262,6 +308,48 @@ describe("parseArgs", () => {
       expect(() => parseArgs(["--agent", "other", "task"])).toThrow(
         '--agent must be "claude" or "pi"',
       );
+    });
+  });
+
+  describe("recipes", () => {
+    test("parses --recipe with named recipe args", () => {
+      const result = parseArgs(["--recipe", "implement", "--plan", "./PLAN.md"]);
+      expect(result).toEqual({
+        steps: [],
+        recipe: { name: "implement", args: ["--plan", "./PLAN.md"] },
+      });
+    });
+
+    test("parses -r with positional recipe args", () => {
+      const result = parseArgs(["-r", "implement", "./PLAN.md"]);
+      expect(result).toEqual({
+        steps: [],
+        recipe: { name: "implement", args: ["./PLAN.md"] },
+      });
+    });
+
+    test("parses global agent and passthrough with recipe", () => {
+      const result = parseArgs([
+        "--agent",
+        "pi",
+        "-r",
+        "implement",
+        "./PLAN.md",
+        "--",
+        "--profile",
+        "fast",
+      ]);
+      expect(result).toEqual({
+        steps: [],
+        agent: "pi",
+        recipe: { name: "implement", args: ["./PLAN.md"] },
+        passthroughArgs: ["--profile", "fast"],
+      });
+    });
+
+    test("rejects recipe without name", () => {
+      expect(() => parseArgs(["--recipe"])).toThrow("--recipe requires a recipe name");
+      expect(() => parseArgs(["-r"])).toThrow("-r requires a recipe name");
     });
   });
 
@@ -347,6 +435,20 @@ describe("parseArgs", () => {
 
     test("--max without value throws", () => {
       expect(() => parseArgs(["task", "--max"])).toThrow("--max requires a positive integer");
+    });
+
+    test("--arg without value throws", () => {
+      expect(() => parseArgs(["task", "--arg"])).toThrow("--arg requires a flag");
+    });
+
+    test("--arg rejects leading dashes", () => {
+      expect(() => parseArgs(["task", "--arg", "--permission-mode=auto"])).toThrow(
+        "without leading dashes",
+      );
+    });
+
+    test("--arg rejects empty values", () => {
+      expect(() => parseArgs(["task", "--arg", "permission-mode="])).toThrow("cannot be empty");
     });
 
     test("nested brackets throw", () => {
