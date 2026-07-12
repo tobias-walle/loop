@@ -1,5 +1,6 @@
 import { type Component, type Container, Spacer, Text } from "@mariozechner/pi-tui";
 import type { AgentEvent } from "../agents/types.js";
+import type { AgentArgs } from "../lib/agent-args.js";
 import { dim, dimGray } from "../lib/ansi.js";
 import type { RunSummary, TokenUsage } from "../lib/types.js";
 import { ThinkingIndicator } from "./components/thinking-indicator.js";
@@ -21,34 +22,32 @@ import {
 
 export type { ChildContainer, LoopTUIState } from "./event-handlers.js";
 
+type ShowStepHeader = (
+  step: number,
+  totalSteps: number,
+  task: string,
+  iteration?: number,
+  max?: number,
+  model?: string,
+  agent?: string,
+  agentArgs?: AgentArgs,
+) => void;
+
 class Separator implements Component {
-  invalidate(): void {
-    // No caching
-  }
+  invalidate(): void {}
 
   render(width: number): string[] {
     return [dimGray("─".repeat(width))];
   }
 }
 
-/**
- * Create the event routing logic decoupled from the real TUI.
- * Accepts an arbitrary root container and a render callback.
- */
 export function createEventRouter(
   root: Container,
   requestRender: () => void,
 ): {
   state: LoopTUIState;
   handleEvent: (event: AgentEvent, stepIndex: number) => void;
-  showStepHeader: (
-    step: number,
-    totalSteps: number,
-    task: string,
-    iteration?: number,
-    max?: number,
-    model?: string,
-  ) => void;
+  showStepHeader: ShowStepHeader;
   showCompletion: (
     type: "done" | "loop_done" | "max_reached",
     durationMs: number,
@@ -113,6 +112,8 @@ export function createEventRouter(
     iteration?: number;
     max?: number;
     model?: string;
+    agent?: string;
+    agentArgs?: AgentArgs;
     metaNode: Text;
     taskNode: Text;
   } | null = null;
@@ -120,7 +121,7 @@ export function createEventRouter(
   function handleEvent(event: AgentEvent, _stepIndex: number): void {
     if (event.type === "session_start" && headerInfo && headerInfo.model !== event.model) {
       headerInfo.model = event.model;
-      const { step, totalSteps, task, iteration, max, model } = headerInfo;
+      const { step, totalSteps, task, iteration, max, model, agent, agentArgs } = headerInfo;
       const [metaLine, taskLine] = formatStepHeaderLines(
         step,
         totalSteps,
@@ -128,6 +129,8 @@ export function createEventRouter(
         iteration,
         max,
         model,
+        agent,
+        agentArgs,
       );
       headerInfo.metaNode.setText(metaLine);
       headerInfo.taskNode.setText(taskLine);
@@ -215,6 +218,8 @@ export function createEventRouter(
     iteration?: number,
     max?: number,
     model?: string,
+    agent?: string,
+    agentArgs?: AgentArgs,
   ): void {
     const [metaLine, taskLine] = formatStepHeaderLines(
       step,
@@ -223,6 +228,8 @@ export function createEventRouter(
       iteration,
       max,
       model,
+      agent,
+      agentArgs,
     );
     state.containerStack.length = 1;
     state.toolIdToContainer.clear();
@@ -236,7 +243,18 @@ export function createEventRouter(
     root.addChild(metaNode);
     root.addChild(taskNode);
     root.addChild(new Spacer());
-    headerInfo = { step, totalSteps, task, iteration, max, model, metaNode, taskNode };
+    headerInfo = {
+      step,
+      totalSteps,
+      task,
+      iteration,
+      max,
+      model,
+      agent,
+      agentArgs,
+      metaNode,
+      taskNode,
+    };
     const thinking = new ThinkingIndicator(requestRender);
     root.addChild(thinking);
     thinking.start();

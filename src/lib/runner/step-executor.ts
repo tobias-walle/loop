@@ -76,7 +76,7 @@ export async function executeStep(
 
     ctx.logger.debug("Prompt built", { promptLength: prompt.length, stepIndex, iteration });
 
-    const session = ctx.agent.spawn(prompt, { cwd: ctx.projectRoot });
+    const session = ctx.agent.spawn(prompt, { cwd: ctx.projectRoot, args: step.args });
     ctx.setCurrentSession(session);
     ctx.logger.info(`${stepLabel} - agent spawned`);
 

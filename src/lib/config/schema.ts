@@ -1,13 +1,17 @@
 import { z } from "zod";
+import type { AgentArgs } from "../agent-args.js";
 
 export const agentNameSchema = z.enum(["claude", "pi"]);
 export type AgentName = z.infer<typeof agentNameSchema>;
+
+const agentArgValueSchema = z.union([z.string(), z.boolean()]);
+export const agentArgsSchema: z.ZodType<AgentArgs> = z.record(z.string(), agentArgValueSchema);
 
 export const agentConfigSchema = z
   .object({
     command: z.string().min(1).optional(),
     model: z.string().min(1).optional(),
-    args: z.array(z.string()).optional(),
+    args: agentArgsSchema.optional(),
     env: z.record(z.string(), z.string()).optional(),
   })
   .strict();
@@ -30,7 +34,7 @@ export type LoopConfigFile = z.infer<typeof fileConfigSchema>;
 export type AgentConfig = {
   command?: string;
   model?: string;
-  args: string[];
+  args: AgentArgs;
   env: Record<string, string>;
 };
 
@@ -46,7 +50,7 @@ export type ConfigCliOverrides = {
 export const DEFAULT_RUNTIME_CONFIG: LoopRuntimeConfig = {
   agent: "claude",
   agents: {
-    claude: { command: "claude", args: [], env: {} },
-    pi: { command: "pi", args: [], env: {} },
+    claude: { command: "claude", args: { "permission-mode": "auto" }, env: {} },
+    pi: { command: "pi", args: {}, env: {} },
   },
 };

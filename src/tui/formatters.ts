@@ -1,3 +1,4 @@
+import type { AgentArgs } from "../lib/agent-args.js";
 import {
   bold,
   boldCyan,
@@ -101,6 +102,8 @@ export function formatStepHeaderLines(
   iteration?: number,
   max?: number,
   model?: string,
+  agent?: string,
+  agentArgs?: AgentArgs,
 ): [string, string] {
   const stepWidth = Math.max(2, String(totalSteps).length);
   const parts = [`step ${padNumber(step, stepWidth)}/${padNumber(totalSteps, stepWidth)}`];
@@ -114,9 +117,19 @@ export function formatStepHeaderLines(
     parts.push(iter);
   }
 
+  if (agent) parts.push(formatAgentHeader(agent, agentArgs));
   if (model) parts.push(model);
 
   return [boldCyan(`[${parts.join(" · ")}]`), bold(task)];
+}
+
+function formatAgentHeader(agent: string, args?: AgentArgs): string {
+  const flagParts = Object.entries(args ?? {})
+    .filter(([, value]) => value !== false)
+    .map(([name, value]) => (value === true ? name : `${name}=${value}`));
+
+  if (flagParts.length === 0) return agent;
+  return `${agent} · ${flagParts.join(" ")}`;
 }
 
 export function formatStepHeader(
@@ -126,8 +139,19 @@ export function formatStepHeader(
   iteration?: number,
   max?: number,
   model?: string,
+  agent?: string,
+  agentArgs?: AgentArgs,
 ): string {
-  return formatStepHeaderLines(step, totalSteps, task, iteration, max, model).join("\n");
+  return formatStepHeaderLines(
+    step,
+    totalSteps,
+    task,
+    iteration,
+    max,
+    model,
+    agent,
+    agentArgs,
+  ).join("\n");
 }
 
 export function formatDuration(ms: number): string {

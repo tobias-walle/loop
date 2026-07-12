@@ -22,8 +22,8 @@ describe("config loading", () => {
     expect(loaded.config).toEqual({
       agent: "claude",
       agents: {
-        claude: { command: "claude", args: [], env: {} },
-        pi: { command: "pi", args: [], env: {} },
+        claude: { command: "claude", args: { "permission-mode": "auto" }, env: {} },
+        pi: { command: "pi", args: {}, env: {} },
       },
     });
   });
@@ -78,7 +78,7 @@ describe("config loading", () => {
     fs.mkdirSync(path.join(root, ".loop"), { recursive: true });
     fs.writeFileSync(
       path.join(configHome, "config.toml"),
-      'agent = "pi"\n[agents.pi]\ncommand = "user-pi"\nargs = ["--user"]\nenv = { A = "user" }\n',
+      'agent = "pi"\n[agents.pi]\ncommand = "user-pi"\nenv = { A = "user" }\n[agents.pi.args]\nuser = true\n',
     );
     fs.writeFileSync(
       path.join(root, ".loop", "config.toml"),
@@ -92,7 +92,7 @@ describe("config loading", () => {
     });
     expect(loaded.config.agent).toBe("claude");
     expect(loaded.config.agents.pi.command).toBe("env-pi");
-    expect(loaded.config.agents.pi.args).toEqual(["--user"]);
+    expect(loaded.config.agents.pi.args).toEqual({ user: true });
     expect(loaded.config.agents.pi.env).toEqual({ A: "project", B: "project" });
   });
 
@@ -139,6 +139,32 @@ describe("config loading", () => {
     expect(() => loadLoopConfig({ cwd: root, env: env({ LOOP_CONFIG_HOME: configHome }) })).toThrow(
       file,
     );
+  });
+
+  test("rejects old array arg syntax", () => {
+    const root = tmpDir();
+    const configHome = path.join(root, "user");
+    fs.mkdirSync(configHome, { recursive: true });
+    fs.writeFileSync(path.join(configHome, "config.toml"), '[agents.pi]\nargs = ["--user"]\n');
+    expect(() => loadLoopConfig({ cwd: root, env: env({ LOOP_CONFIG_HOME: configHome }) })).toThrow(
+      "agents.pi.args",
+    );
+  });
+
+  test("structured args merge with defaults", () => {
+    const root = tmpDir();
+    const configHome = path.join(root, "user");
+    fs.mkdirSync(configHome, { recursive: true });
+    fs.writeFileSync(
+      path.join(configHome, "config.toml"),
+      '[agents.claude.args]\npermission-mode = "bypassPermissions"\nsome-flag = true\ndisabled = false\n',
+    );
+    const loaded = loadLoopConfig({ cwd: root, env: env({ LOOP_CONFIG_HOME: configHome }) });
+    expect(loaded.config.agents.claude.args).toEqual({
+      "permission-mode": "bypassPermissions",
+      "some-flag": true,
+      disabled: false,
+    });
   });
 
   test("zod errors include field paths", () => {

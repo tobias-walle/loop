@@ -21,24 +21,29 @@ describe("pi JSONL", () => {
   });
 });
 
-describe("pi JSON adapter", () => {
-  test("spawns pi print JSON mode with prompt as an argument", async () => {
+describe("pi RPC adapter", () => {
+  test("spawns pi RPC mode and sends prompt over stdin", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
     const argvPath = path.join(dir, "argv.json");
+    const stdinPath = path.join(dir, "stdin.json");
     const scriptPath = path.join(dir, "fake-pi.js");
     fs.writeFileSync(
       scriptPath,
       `import fs from "node:fs";
 fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(2)));
+let stdin = "";
+await new Promise((resolve) => process.stdin.on("data", (chunk) => { stdin += chunk.toString(); if (stdin.includes("\\n")) resolve(); }));
+fs.writeFileSync(${JSON.stringify(stdinPath)}, stdin.trim());
 process.stdout.write(JSON.stringify({ type: "session", id: "sess-1" }) + "\\n");
 process.stdout.write(JSON.stringify({ type: "agent_start" }) + "\\n");
 process.stdout.write(JSON.stringify({ type: "message_start", message: { role: "assistant", model: "gpt-5.5" } }) + "\\n");
 process.stdout.write(JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hello" } }) + "\\n");
 process.stdout.write(JSON.stringify({ type: "agent_end", result: "hello", durationMs: 12, messages: [{ role: "assistant", usage: { input: 1, output: 2, cacheWrite: 3, cacheRead: 4, cost: { total: 0.5 } } }] }) + "\\n");
+process.exit(0);
 `,
     );
 
-    const session = createPiAdapter({ command: process.execPath, args: [scriptPath] }).spawn(
+    const session = createPiAdapter({ command: process.execPath, rawArgs: [scriptPath] }).spawn(
       "hello",
     );
     const events = [];
@@ -47,11 +52,13 @@ process.stdout.write(JSON.stringify({ type: "agent_end", result: "hello", durati
 
     expect(JSON.parse(fs.readFileSync(argvPath, "utf-8"))).toEqual([
       "--no-session",
-      "--print",
       "--mode",
-      "json",
-      "hello",
+      "rpc",
     ]);
+    expect(JSON.parse(fs.readFileSync(stdinPath, "utf-8"))).toEqual({
+      type: "prompt",
+      message: "hello",
+    });
     expect(events).toEqual([
       { type: "session_start", model: "pi", sessionId: "sess-1", tools: [] },
       { type: "session_start", model: "gpt-5.5", sessionId: "sess-1", tools: [] },
@@ -67,7 +74,8 @@ process.stdout.write(JSON.stringify({ type: "agent_end", result: "hello", durati
   });
 
   test("rejects --mode in args", () => {
-    expect(() => createPiAdapter({ args: ["--mode", "text"] })).toThrow("does not allow");
+    expect(() => createPiAdapter({ args: { mode: "text" } })).toThrow("does not allow");
+    expect(() => createPiAdapter({ rawArgs: ["--mode", "text"] })).toThrow("does not allow");
   });
 
   test("does not duplicate --no-session from configured args", async () => {
@@ -83,16 +91,14 @@ fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(
 
     const session = createPiAdapter({
       command: process.execPath,
-      args: [scriptPath, "--no-session"],
+      rawArgs: [scriptPath, "--no-session"],
     }).spawn("hello");
     await session.exited;
 
     expect(JSON.parse(fs.readFileSync(argvPath, "utf-8"))).toEqual([
       "--no-session",
-      "--print",
       "--mode",
-      "json",
-      "hello",
+      "rpc",
     ]);
   });
 });

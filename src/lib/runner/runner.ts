@@ -6,6 +6,7 @@ import { executeStep } from "./step-executor.js";
 
 export interface RunnerOptions {
   agent: AgentAdapter;
+  agentName?: string;
   projectRoot?: string;
   logger?: Logger;
   onEvent?: (event: AgentEvent, stepIndex: number) => void;
@@ -60,6 +61,8 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
         logger.info("Step execution starting", {
           stepIndex: i,
           stepType: step.type,
+          agent: opts.agentName ?? "custom",
+          agentArgs: step.args ?? {},
           ...(step.type === "task" ? { task: step.task } : { tasks: step.tasks }),
           ...(step.until != null ? { until: step.until } : {}),
           ...(step.repeat != null ? { repeat: step.repeat } : {}),

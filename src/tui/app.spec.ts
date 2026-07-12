@@ -357,6 +357,35 @@ describe("createEventRouter", () => {
     expect(getRenderCount()).toBeGreaterThan(1);
   });
 
+  test("showStepHeader renders concise agent args", () => {
+    const { root, router } = setup();
+
+    router.showStepHeader(1, 2, "Write code", undefined, undefined, undefined, "claude", {
+      "permission-mode": "bypassPermissions",
+    });
+
+    const rendered = renderChild(root, 1);
+    expect(rendered).toContain("claude");
+    expect(rendered).toContain("permission-mode=bypassPermissions");
+  });
+
+  test("session_start preserves agent args in the active step header", () => {
+    const { root, router } = setup();
+
+    router.showStepHeader(1, 2, "Write code", undefined, undefined, undefined, "claude", {
+      "permission-mode": "bypassPermissions",
+    });
+    router.handleEvent(
+      { type: "session_start", model: "claude-sonnet", sessionId: "s1", tools: ["Bash"] },
+      0,
+    );
+
+    const rendered = renderChild(root, 1);
+    expect(rendered).toContain("claude");
+    expect(rendered).toContain("permission-mode=bypassPermissions");
+    expect(rendered).toContain("claude-sonnet");
+  });
+
   test("thinking indicator is removed on first agent output and re-shown after text_done", () => {
     const { root, router } = setup();
 

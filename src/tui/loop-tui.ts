@@ -1,5 +1,6 @@
 import { Container, ProcessTerminal, TUI } from "@mariozechner/pi-tui";
 import type { AgentEvent } from "../agents/types.js";
+import type { AgentArgs } from "../lib/agent-args.js";
 import type { RunSummary, TokenUsage } from "../lib/types.js";
 import { StatusBar } from "./components/status-bar.js";
 import { createEventRouter } from "./event-router.js";
@@ -19,6 +20,8 @@ export interface LoopTUI {
     iteration?: number,
     max?: number,
     model?: string,
+    agent?: string,
+    agentArgs?: AgentArgs,
   ): void;
   showCompletion(
     type: "done" | "loop_done" | "max_reached",
@@ -94,8 +97,10 @@ export function createLoopTUI(opts?: LoopTUIOptions): LoopTUI {
       iteration?: number,
       max?: number,
       model?: string,
+      agent?: string,
+      agentArgs?: AgentArgs,
     ): void {
-      router.showStepHeader(step, totalSteps, task, iteration, max, model);
+      router.showStepHeader(step, totalSteps, task, iteration, max, model, agent, agentArgs);
     },
 
     showCompletion(

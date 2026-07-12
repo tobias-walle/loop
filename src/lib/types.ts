@@ -1,3 +1,5 @@
+import type { AgentArgs } from "./agent-args.js";
+
 /** A single task or a group of tasks with optional loop modifiers. */
 export type Step =
   | {
@@ -6,6 +8,7 @@ export type Step =
       until?: string;
       repeat?: number;
       max?: number;
+      args?: AgentArgs;
     }
   | {
       type: "group";
@@ -13,13 +16,19 @@ export type Step =
       until?: string;
       repeat?: number;
       max?: number;
+      args?: AgentArgs;
     };
 
 /** Configuration derived from CLI parsing. */
 export type LoopConfig = {
   steps: Step[];
-  command?: "init" | "help" | "version";
+  command?: "init" | "init-recipe" | "help" | "version";
   agent?: "claude" | "pi";
+  recipe?: {
+    name: string;
+    args: string[];
+  };
+  initRecipeName?: string;
   passthroughArgs?: string[];
 };
 

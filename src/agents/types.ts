@@ -1,3 +1,5 @@
+import type { AgentArgs } from "../lib/agent-args.js";
+
 export type AgentEvent =
   | { type: "session_start"; model: string; sessionId: string; tools: string[] }
   | { type: "text_delta"; text: string; parentToolUseId: string | null }
@@ -59,4 +61,5 @@ export interface AgentAdapter {
 export interface AgentSpawnOptions {
   cwd?: string;
   env?: Record<string, string>;
+  args?: AgentArgs;
 }

@@ -1,12 +1,16 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { type AgentArgs, mergeAgentArgs, renderAgentArgs } from "../../lib/agent-args.js";
 import { type Logger, noopLogger } from "../../lib/logging.js";
 import type { AgentAdapter, AgentSession, AgentSpawnOptions } from "../types.js";
 import { streamEvents } from "./stream.js";
 
+const DEFAULT_CLAUDE_ARGS: AgentArgs = { "permission-mode": "auto" };
+
 export interface ClaudeAdapterOptions {
   command?: string;
   model?: string;
-  args?: string[];
+  args?: AgentArgs;
+  rawArgs?: string[];
   env?: Record<string, string>;
   logger?: Logger;
 }
@@ -14,7 +18,8 @@ export interface ClaudeAdapterOptions {
 export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapter {
   const logger = options?.logger ?? noopLogger;
   const command = options?.command ?? "claude";
-  const configuredArgs = options?.args ?? [];
+  const configuredArgs = options?.args ?? {};
+  const configuredRawArgs = options?.rawArgs ?? [];
   const configuredEnv = options?.env ?? {};
   if (options?.model) {
     logger.warn(
@@ -30,11 +35,11 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
       const args = [
         "--print",
         "--verbose",
-        "--dangerously-skip-permissions",
         "--output-format",
         "stream-json",
         "--include-partial-messages",
-        ...configuredArgs,
+        ...renderAgentArgs(mergeAgentArgs(DEFAULT_CLAUDE_ARGS, configuredArgs, opts?.args)),
+        ...configuredRawArgs,
         prompt,
       ];
 

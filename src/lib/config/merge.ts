@@ -5,8 +5,16 @@ function cloneDefaults(): LoopRuntimeConfig {
   return {
     agent: DEFAULT_RUNTIME_CONFIG.agent,
     agents: {
-      claude: { ...DEFAULT_RUNTIME_CONFIG.agents.claude, args: [], env: {} },
-      pi: { ...DEFAULT_RUNTIME_CONFIG.agents.pi, args: [], env: {} },
+      claude: {
+        ...DEFAULT_RUNTIME_CONFIG.agents.claude,
+        args: { ...DEFAULT_RUNTIME_CONFIG.agents.claude.args },
+        env: {},
+      },
+      pi: {
+        ...DEFAULT_RUNTIME_CONFIG.agents.pi,
+        args: { ...DEFAULT_RUNTIME_CONFIG.agents.pi.args },
+        env: {},
+      },
     },
   };
 }
@@ -25,7 +33,7 @@ export function mergeFile(config: LoopRuntimeConfig, file: LoopConfigFile): void
     config.agents[name] = {
       ...config.agents[name],
       ...agent,
-      args: agent.args ?? config.agents[name].args,
+      args: agent.args ? { ...config.agents[name].args, ...agent.args } : config.agents[name].args,
       env: agent.env ? { ...config.agents[name].env, ...agent.env } : config.agents[name].env,
     };
   }

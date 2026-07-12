@@ -49,6 +49,38 @@ describe("runner", () => {
     expect(result.totalDurationMs).toBe(1500);
   });
 
+  test("logs agent and custom args on step start", async () => {
+    const logs: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    const logger = {
+      debug() {},
+      info(message: string, data?: Record<string, unknown>) {
+        logs.push({ message, data });
+      },
+      warn() {},
+      error() {},
+    };
+    const runner = createRunner(
+      [{ type: "task", task: "Review", args: { "permission-mode": "bypassPermissions" } }],
+      {
+        agent: createStubAdapter(SIMPLE_TEXT),
+        agentName: "claude",
+        logger,
+        projectRoot: `/tmp/loop-test-log-${Date.now()}`,
+      },
+    );
+
+    await runner.run();
+
+    expect(logs).toContainEqual({
+      message: "Step execution starting",
+      data: expect.objectContaining({
+        agent: "claude",
+        agentArgs: { "permission-mode": "bypassPermissions" },
+        stepIndex: 0,
+      }),
+    });
+  });
+
   test("repeat loop runs exactly N times", async () => {
     const steps: Step[] = [{ type: "task", task: "Run tests", repeat: 3 }];
     const scenarios: Scenario[] = [
@@ -237,6 +269,44 @@ describe("runner", () => {
     expect(result.stepResults[0].error).toBe("Something went wrong");
     expect(result.stepResults[1].exitReason).toBe("error");
     expect(result.stepResults[1].error).toBe("Skipped due to previous error");
+  });
+
+  test("passes step args to agent spawn", async () => {
+    const seenArgs: unknown[] = [];
+    const adapter = {
+      spawn(_prompt: string, opts?: { args?: unknown }) {
+        seenArgs.push(opts?.args);
+        return {
+          events: (async function* () {
+            yield {
+              type: "done" as const,
+              result: "ok",
+              costUsd: 0,
+              durationMs: 0,
+              usage: { inputTokens: 0, outputTokens: 0 },
+            };
+          })(),
+          abort() {},
+          exited: Promise.resolve(),
+        };
+      },
+    };
+
+    const runner = createRunner(
+      [
+        { type: "task", task: "Safe", args: { "permission-mode": "auto" } },
+        { type: "task", task: "Bypass", args: { "permission-mode": "bypassPermissions" } },
+      ],
+      { agent: adapter, projectRoot: `/tmp/loop-test-args-${Date.now()}` },
+    );
+
+    const result = await runner.run();
+
+    expect(result.success).toBe(true);
+    expect(seenArgs).toEqual([
+      { "permission-mode": "auto" },
+      { "permission-mode": "bypassPermissions" },
+    ]);
   });
 
   test("cost and duration accumulation across steps", async () => {

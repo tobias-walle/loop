@@ -13,11 +13,11 @@ export type CreateConfiguredAgentOptions = {
 
 export function createConfiguredAgent(options: CreateConfiguredAgentOptions): AgentAdapter {
   const agentConfig = options.config.agents[options.selectedAgent];
-  const args = [...agentConfig.args, ...(options.passthroughArgs ?? [])];
   const common = {
     command: agentConfig.command,
     model: agentConfig.model,
-    args,
+    args: agentConfig.args,
+    rawArgs: options.passthroughArgs ?? [],
     env: agentConfig.env,
     logger: options.logger,
   };

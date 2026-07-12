@@ -115,6 +115,20 @@ describe("formatStepHeader", () => {
     const header = strip(formatStepHeader(1, 2, "Write code", 1, 3, "claude-opus-4-6[1m]"));
     expect(header).toContain("claude-opus-4-6[1m]");
   });
+
+  test("includes agent and args when provided", () => {
+    const header = strip(
+      formatStepHeader(1, 2, "Write code", undefined, undefined, undefined, "claude", {
+        "permission-mode": "bypassPermissions",
+        "debug-mode": true,
+        disabled: false,
+      }),
+    );
+    expect(header).toContain("claude");
+    expect(header).toContain("permission-mode=bypassPermissions");
+    expect(header).toContain("debug-mode");
+    expect(header).not.toContain("disabled");
+  });
 });
 
 describe("formatCompletion", () => {
