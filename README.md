@@ -40,6 +40,9 @@ loop --agent pi "Fix tests" -- --profile fast
 # Override agent flags for one step
 loop "Review safely" --arg permission-mode=auto "Fix with bypass" --arg permission-mode=bypassPermissions
 
+# Inspect and continue unfinished sessions
+loop resume
+
 # Create a recipe template
 loop init-recipe implement
 
@@ -192,8 +195,9 @@ These are project inputs. They can be committed when the team should share them.
 
 ```text
 <state-home>/sessions/<project-slug>/<session-id>/
-├── session.json     # Project path, timestamps, and completion status
-└── events.jsonl     # Append-only structured lifecycle events
+├── session.json     # Rebuildable overview projection
+├── events.jsonl     # Authoritative invocation, progress, and output history
+└── active.lock      # Present only while a process owns the session
 ```
 
 | Platform | Default state home |
@@ -205,6 +209,8 @@ These are project inputs. They can be committed when the team should share them.
 `LOOP_STATE_HOME` overrides the whole state home. `$XDG_STATE_HOME/loop` takes precedence over the platform default when `XDG_STATE_HOME` is set.
 
 Project slugs combine the folder name with a short hash, so projects with the same name do not share sessions. Session IDs start with a UTC timestamp, making directories sortable. Loop retains sessions until you delete them.
+
+Run `loop resume` to browse sessions from every project, inspect their history, and continue an unfinished workflow. Resume starts at the first incomplete step. Completed steps are skipped, while an interrupted step restarts from iteration 1 in a fresh agent process. The stored workflow, template, agent settings, and project root are reused. Legacy and completed sessions remain viewable but cannot be continued.
 
 ## How it works
 
