@@ -13,7 +13,7 @@
   },
   "files": ["dist", "src/templates"],
   "scripts": {
-    "build": "bun build src/cli.ts --outdir dist --outfile dist/cli.js --target node && bun build src/index.ts --outdir dist --target node && chmod +x dist/cli.js",
+    "build": "bun build src/cli.ts --outdir dist --outfile dist/cli.js --target node && bun scripts/ensure-cli-shebang.ts dist/cli.js && bun build src/index.ts --outdir dist --target node",
     "dev": "bun src/cli.ts",
     "test": "bun test",
     "check": "sh scripts/check.sh",
