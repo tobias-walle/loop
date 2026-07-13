@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { type AgentArgs, mergeAgentArgs, renderAgentArgs } from "../../lib/agent-args.js";
 import { type Logger, noopLogger } from "../../lib/logging.js";
+import { createChildProcessController } from "../child-process.js";
 import type { AgentAdapter, AgentSession, AgentSpawnOptions } from "../types.js";
 import { streamEvents } from "./stream.js";
 
@@ -62,16 +63,6 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
         logger.info("Claude process spawned", { pid });
       }
 
-      const exited = new Promise<void>((resolveExit) => {
-        proc.on("exit", (code, signal) => {
-          logger.info("Claude process exited", { pid, code, signal });
-          if (proc.stdout && !proc.stdout.destroyed) {
-            proc.stdout.destroy();
-          }
-          resolveExit();
-        });
-      });
-
       proc.on("error", (err) => {
         logger.error("Claude process error", { pid, error: err.message });
       });
@@ -93,16 +84,23 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
         }
       });
 
+      const controller = createChildProcessController(proc, {
+        onExit: (code, signal) => {
+          logger.info("Claude process exited", { pid, code, signal });
+        },
+        onForceKill: () => logger.warn("Force killing unresponsive Claude process", { pid }),
+      });
+      const terminate = () => controller.terminate();
       const events = proc.stdout
-        ? wrapTerminateOnEnd(streamEvents(proc.stdout), proc, logger, pid)
-        : emptyEvents();
+        ? wrapTerminateOnEnd(streamEvents(proc.stdout), proc, logger, pid, terminate)
+        : emptyEvents(terminate);
 
       return {
         events,
-        exited,
+        exited: controller.exited,
         abort(): void {
-          logger.warn("Aborting claude process", { pid });
-          proc.kill("SIGTERM");
+          const signal = terminate();
+          logger.warn("Aborting claude process", { pid, signal });
         },
       };
     },
@@ -114,14 +112,15 @@ async function* wrapTerminateOnEnd(
   proc: ChildProcess,
   logger: Logger,
   pid: number | undefined,
+  terminate: () => NodeJS.Signals,
 ): AsyncGenerator<import("../types.js").AgentEvent> {
   for await (const event of source) {
-    yield event;
     if (event.type === "done" || event.type === "error") {
       logger.debug("Terminating claude process after event", { pid, eventType: event.type });
-      proc.kill("SIGTERM");
-      return;
+      terminate();
     }
+    yield event;
+    if (event.type === "done" || event.type === "error") return;
   }
 
   const exitCode = proc.exitCode;
@@ -130,10 +129,13 @@ async function* wrapTerminateOnEnd(
       ? `Claude process exited unexpectedly (code ${exitCode})`
       : "Claude event stream ended without completion";
   logger.warn(msg, { pid, exitCode });
-  if (exitCode == null) proc.kill("SIGTERM");
+  terminate();
   yield { type: "error", message: msg };
 }
 
-async function* emptyEvents(): AsyncGenerator<import("../types.js").AgentEvent> {
+async function* emptyEvents(
+  terminate: () => NodeJS.Signals,
+): AsyncGenerator<import("../types.js").AgentEvent> {
+  terminate();
   yield { type: "error", message: "Claude process has no stdout stream" };
 }

@@ -1,6 +1,15 @@
 import type { AgentEvent, TokenUsage } from "../types.js";
 import { formatMessageEndError } from "./error-format.js";
 import { arrayOfStrings, isRecord, numberAt, recordAt, stringAt } from "./object.js";
+import {
+  addUsage,
+  extractRunCost,
+  extractRunUsage,
+  hasRunCost,
+  hasRunUsage,
+  usageFromRaw,
+  zeroUsage,
+} from "./usage.js";
 
 export type PiEventState = {
   text: string;
@@ -10,6 +19,8 @@ export type PiEventState = {
   cwd?: string;
   sessionVersion?: number;
   tools: string[];
+  cumulativeCostUsd: number;
+  cumulativeUsage: TokenUsage;
   pendingDone?: PendingPiDone;
 };
 
@@ -21,7 +32,14 @@ type PendingPiDone = {
 };
 
 export function createPiEventState(): PiEventState {
-  return { text: "", sessionStarted: false, sessionId: "pi-json", tools: [] };
+  return {
+    text: "",
+    sessionStarted: false,
+    sessionId: "pi-json",
+    tools: [],
+    cumulativeCostUsd: 0,
+    cumulativeUsage: zeroUsage(),
+  };
 }
 
 export function mapPiEvent(raw: unknown, state: PiEventState): AgentEvent[] {
@@ -97,8 +115,11 @@ export function mapPiEvent(raw: unknown, state: PiEventState): AgentEvent[] {
       if (stopReason === "error") return [{ type: "error", message: formatMessageEndError(raw) }];
       return [];
     }
-    case "turn_start":
     case "turn_end":
+      return mapTurnEnd(raw, state);
+    case "agent_settled":
+      return state.pendingDone ? [completePendingDone(state)] : [];
+    case "turn_start":
     case "queue_update":
     case "compaction_start":
     case "compaction_end":
@@ -112,6 +133,21 @@ export function mapPiEvent(raw: unknown, state: PiEventState): AgentEvent[] {
     default:
       return [{ type: "unknown", eventType: type, raw }];
   }
+}
+
+function mapTurnEnd(raw: Record<string, unknown>, state: PiEventState): AgentEvent[] {
+  const message = recordAt(raw, ["message"]);
+  const usage = recordAt(message, ["usage"]);
+  if (!usage) return [];
+  state.cumulativeUsage = addUsage(state.cumulativeUsage, usageFromRaw(usage));
+  state.cumulativeCostUsd += numberAt(usage, ["cost", "total"]) ?? 0;
+  return [
+    {
+      type: "usage_update",
+      costUsd: state.cumulativeCostUsd,
+      usage: state.cumulativeUsage,
+    },
+  ];
 }
 
 function mapMessageStart(raw: Record<string, unknown>, state: PiEventState): AgentEvent[] {
@@ -164,8 +200,8 @@ export function completePendingDone(
 function createPendingDone(raw: Record<string, unknown>, state: PiEventState): PendingPiDone {
   const finalMessage = extractFinalAssistantMessage(raw);
   const result = extractFinalText(raw, finalMessage) ?? state.text;
-  const fallbackUsage = extractRunUsage(raw);
-  const fallbackCostUsd = extractRunCost(raw);
+  const fallbackUsage = hasRunUsage(raw) ? extractRunUsage(raw) : state.cumulativeUsage;
+  const fallbackCostUsd = hasRunCost(raw) ? extractRunCost(raw) : state.cumulativeCostUsd;
   const durationMs = numberAt(raw, ["durationMs"]) ?? numberAt(raw, ["duration_ms"]) ?? 0;
   return { result, durationMs, fallbackUsage, fallbackCostUsd };
 }
@@ -194,63 +230,6 @@ function mapUsageUpdate(raw: Record<string, unknown>): AgentEvent[] {
       },
     },
   ];
-}
-
-function extractRunUsage(raw: Record<string, unknown>): TokenUsage {
-  const usageRaw =
-    recordAt(raw, ["usage"]) ??
-    recordAt(raw, ["message", "usage"]) ??
-    recordAt(raw, ["assistant", "usage"]);
-  if (usageRaw) return usageFromRaw(usageRaw);
-
-  const messages = Array.isArray(raw.messages) ? raw.messages : [];
-  return messages.reduce<TokenUsage>((total, message) => {
-    if (!isRecord(message) || message.role !== "assistant") return total;
-    const usage = recordAt(message, ["usage"]);
-    if (!usage) return total;
-    return addUsage(total, usageFromRaw(usage));
-  }, zeroUsage());
-}
-
-function extractRunCost(raw: Record<string, unknown>): number {
-  const usageRaw =
-    recordAt(raw, ["usage"]) ??
-    recordAt(raw, ["message", "usage"]) ??
-    recordAt(raw, ["assistant", "usage"]);
-  if (usageRaw) return numberAt(usageRaw, ["cost", "total"]) ?? numberAt(raw, ["costUsd"]) ?? 0;
-
-  const messages = Array.isArray(raw.messages) ? raw.messages : [];
-  return messages.reduce(
-    (total, message) => {
-      if (!isRecord(message) || message.role !== "assistant") return total;
-      return total + (numberAt(message, ["usage", "cost", "total"]) ?? 0);
-    },
-    numberAt(raw, ["costUsd"]) ?? 0,
-  );
-}
-
-function usageFromRaw(usageRaw: Record<string, unknown>): TokenUsage {
-  return {
-    inputTokens: numberAt(usageRaw, ["input"]) ?? numberAt(usageRaw, ["inputTokens"]) ?? 0,
-    outputTokens: numberAt(usageRaw, ["output"]) ?? numberAt(usageRaw, ["outputTokens"]) ?? 0,
-    cacheCreationTokens:
-      numberAt(usageRaw, ["cacheWrite"]) ?? numberAt(usageRaw, ["cacheCreationTokens"]) ?? 0,
-    cacheReadTokens:
-      numberAt(usageRaw, ["cacheRead"]) ?? numberAt(usageRaw, ["cacheReadTokens"]) ?? 0,
-  };
-}
-
-function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
-  return {
-    inputTokens: a.inputTokens + b.inputTokens,
-    outputTokens: a.outputTokens + b.outputTokens,
-    cacheCreationTokens: (a.cacheCreationTokens ?? 0) + (b.cacheCreationTokens ?? 0),
-    cacheReadTokens: (a.cacheReadTokens ?? 0) + (b.cacheReadTokens ?? 0),
-  };
-}
-
-function zeroUsage(): TokenUsage {
-  return { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 };
 }
 
 function extractFinalText(

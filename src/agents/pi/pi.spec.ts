@@ -21,19 +21,15 @@ describe("pi JSONL", () => {
   });
 });
 
-describe("pi RPC adapter", () => {
-  test("spawns pi RPC mode and sends prompt over stdin", async () => {
+describe("pi adapter", () => {
+  test("spawns one-shot JSON mode with the prompt as an argument", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
     const argvPath = path.join(dir, "argv.json");
-    const stdinPath = path.join(dir, "stdin.json");
     const scriptPath = path.join(dir, "fake-pi.js");
     fs.writeFileSync(
       scriptPath,
       `import fs from "node:fs";
 fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(2)));
-let stdin = "";
-await new Promise((resolve) => process.stdin.on("data", (chunk) => { stdin += chunk.toString(); if (stdin.includes("\\n")) resolve(); }));
-fs.writeFileSync(${JSON.stringify(stdinPath)}, stdin.trim());
 process.stdout.write(JSON.stringify({ type: "session", id: "sess-1" }) + "\\n");
 process.stdout.write(JSON.stringify({ type: "agent_start" }) + "\\n");
 process.stdout.write(JSON.stringify({ type: "message_start", message: { role: "assistant", model: "gpt-5.5" } }) + "\\n");
@@ -52,13 +48,11 @@ process.exit(0);
 
     expect(JSON.parse(fs.readFileSync(argvPath, "utf-8"))).toEqual([
       "--no-session",
+      "--print",
       "--mode",
-      "rpc",
+      "json",
+      "hello",
     ]);
-    expect(JSON.parse(fs.readFileSync(stdinPath, "utf-8"))).toEqual({
-      type: "prompt",
-      message: "hello",
-    });
     expect(events).toEqual([
       { type: "session_start", model: "pi", sessionId: "sess-1", tools: [] },
       { type: "session_start", model: "gpt-5.5", sessionId: "sess-1", tools: [] },
@@ -71,6 +65,31 @@ process.exit(0);
         usage: { inputTokens: 1, outputTokens: 2, cacheCreationTokens: 3, cacheReadTokens: 4 },
       },
     ]);
+  });
+
+  test("uses wall time when one-shot events omit duration", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
+    const scriptPath = path.join(dir, "fake-pi.js");
+    fs.writeFileSync(
+      scriptPath,
+      `await new Promise((resolve) => setTimeout(resolve, 20));
+process.stdout.write(JSON.stringify({ type: "agent_start" }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "agent_end", result: "done", usage: { input: 1, output: 1 } }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "agent_settled" }) + "\\n");
+setInterval(() => {}, 1000);
+`,
+    );
+
+    const session = createPiAdapter({ command: process.execPath, rawArgs: [scriptPath] }).spawn(
+      "hello",
+    );
+    const events = [];
+    for await (const event of session.events) events.push(event);
+    await session.exited;
+
+    const done = events.find((event) => event.type === "done");
+    expect(done?.type).toBe("done");
+    if (done?.type === "done") expect(done.durationMs).toBeGreaterThanOrEqual(10);
   });
 
   test("rejects --mode in args", () => {
@@ -97,8 +116,10 @@ fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(
 
     expect(JSON.parse(fs.readFileSync(argvPath, "utf-8"))).toEqual([
       "--no-session",
+      "--print",
       "--mode",
-      "rpc",
+      "json",
+      "hello",
     ]);
   });
 });
@@ -183,6 +204,129 @@ describe("pi event mapping", () => {
         state,
       ),
     ).toEqual([{ type: "tool_done", toolId: "t1", result: "ok", parentToolUseId: null }]);
+  });
+
+  test("emits cumulative usage from one-shot turn events", () => {
+    const state = createPiEventState();
+    expect(
+      mapPiEvent(
+        {
+          type: "turn_end",
+          message: {
+            role: "assistant",
+            usage: {
+              input: 10,
+              output: 2,
+              cacheWrite: 1,
+              cacheRead: 3,
+              cost: { total: 0.1 },
+            },
+          },
+        },
+        state,
+      ),
+    ).toEqual([
+      {
+        type: "usage_update",
+        costUsd: 0.1,
+        usage: {
+          inputTokens: 10,
+          outputTokens: 2,
+          cacheCreationTokens: 1,
+          cacheReadTokens: 3,
+        },
+      },
+    ]);
+    expect(
+      mapPiEvent(
+        {
+          type: "turn_end",
+          message: {
+            role: "assistant",
+            usage: {
+              input: 5,
+              output: 1,
+              cacheWrite: 2,
+              cacheRead: 4,
+              cost: { total: 0.2 },
+            },
+          },
+        },
+        state,
+      ),
+    ).toEqual([
+      {
+        type: "usage_update",
+        costUsd: 0.1 + 0.2,
+        usage: {
+          inputTokens: 15,
+          outputTokens: 3,
+          cacheCreationTokens: 3,
+          cacheReadTokens: 7,
+        },
+      },
+    ]);
+  });
+
+  test("preserves cumulative turn usage when agent_end omits totals", () => {
+    const state = createPiEventState();
+    mapPiEvent(
+      {
+        type: "turn_end",
+        message: {
+          usage: {
+            input: 10,
+            output: 2,
+            cacheWrite: 1,
+            cacheRead: 3,
+            cost: { total: 0.1 },
+          },
+        },
+      },
+      state,
+    );
+    mapPiEvent({ type: "agent_end", result: "done" }, state);
+
+    expect(completePendingDone(state)).toEqual({
+      type: "done",
+      result: "done",
+      costUsd: 0.1,
+      durationMs: 0,
+      usage: {
+        inputTokens: 10,
+        outputTokens: 2,
+        cacheCreationTokens: 1,
+        cacheReadTokens: 3,
+      },
+    });
+  });
+
+  test("completes one-shot output when the agent settles", () => {
+    const state = createPiEventState();
+    expect(
+      mapPiEvent(
+        {
+          type: "agent_end",
+          result: "done",
+          usage: { input: 2, output: 1, cost: { total: 0.3 } },
+        },
+        state,
+      ),
+    ).toEqual([]);
+    expect(mapPiEvent({ type: "agent_settled" }, state)).toEqual([
+      {
+        type: "done",
+        result: "done",
+        costUsd: 0.3,
+        durationMs: 0,
+        usage: {
+          inputTokens: 2,
+          outputTokens: 1,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+        },
+      },
+    ]);
   });
 
   test("maps retry events", () => {

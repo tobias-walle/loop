@@ -1,9 +1,10 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { type AgentArgs, mergeAgentArgs, renderAgentArgs } from "../../lib/agent-args.js";
 import { type Logger, noopLogger } from "../../lib/logging.js";
+import { createChildProcessController } from "../child-process.js";
 import type { AgentAdapter, AgentEvent, AgentSession, AgentSpawnOptions } from "../types.js";
 import { completePendingDone, createPiEventState, mapPiEvent } from "./events.js";
-import { readJsonLines, writeJsonCommand } from "./json.js";
+import { readJsonLines } from "./json.js";
 
 export interface PiAdapterOptions {
   command?: string;
@@ -26,7 +27,7 @@ export function createPiAdapter(options: PiAdapterOptions = {}): AgentAdapter {
     configuredArgs.mode !== undefined ||
     configuredRawArgs.some((arg) => arg === "--mode" || arg.startsWith("--mode="))
   ) {
-    throw new Error('pi adapter does not allow "--mode" in args because it must enforce RPC mode');
+    throw new Error('pi adapter does not allow "--mode" in args because it must enforce JSON mode');
   }
 
   const sessionArgs =
@@ -39,7 +40,7 @@ export function createPiAdapter(options: PiAdapterOptions = {}): AgentAdapter {
       const renderedArgs = renderAgentArgs(mergeAgentArgs(configuredArgs, opts?.args));
       if (opts?.args?.mode !== undefined) {
         throw new Error(
-          'pi adapter does not allow "--mode" in step args because it must enforce RPC mode',
+          'pi adapter does not allow "--mode" in step args because it must enforce JSON mode',
         );
       }
       const args = [
@@ -47,19 +48,22 @@ export function createPiAdapter(options: PiAdapterOptions = {}): AgentAdapter {
         ...renderedArgs,
         ...configuredRawArgs,
         ...sessionArgs,
+        "--print",
         "--mode",
-        "rpc",
+        "json",
+        prompt,
       ];
-      logger.debug("Spawning pi RPC process", { command, cwd: opts?.cwd, argCount: args.length });
+      logger.debug("Spawning pi JSON process", { command, cwd: opts?.cwd, argCount: args.length });
 
+      const startedAt = Date.now();
       const proc: ChildProcess = spawn(command, args, {
-        stdio: ["pipe", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", "pipe"],
         cwd: opts?.cwd,
         env: { ...process.env, ...configuredEnv, ...(opts?.env ?? {}) },
       });
       const pid = proc.pid;
-      if (pid == null) logger.warn("pi RPC process spawned without PID");
-      else logger.info("pi RPC process spawned", { pid });
+      if (pid == null) logger.warn("pi JSON process spawned without PID");
+      else logger.info("pi JSON process spawned", { pid });
 
       let stderrBuf = "";
       proc.stderr?.on("data", (chunk: Buffer) => {
@@ -75,25 +79,24 @@ export function createPiAdapter(options: PiAdapterOptions = {}): AgentAdapter {
       proc.stderr?.on("end", () => {
         if (stderrBuf.trim()) logger.warn("pi stderr", { pid, line: stderrBuf.trim() });
       });
-      proc.on("error", (err) => logger.error("pi RPC process error", { pid, error: err.message }));
+      proc.on("error", (err) => logger.error("pi JSON process error", { pid, error: err.message }));
 
-      const exited = new Promise<void>((resolve) => {
-        proc.on("exit", (code, signal) => {
-          logger.info("pi RPC process exited", { pid, code, signal });
-          if (proc.stdout && !proc.stdout.destroyed) proc.stdout.destroy();
-          resolve();
-        });
+      const controller = createChildProcessController(proc, {
+        onExit: (code, signal) => {
+          logger.info("pi JSON process exited", { pid, code, signal });
+        },
+        onForceKill: () => logger.warn("Force killing unresponsive pi JSON process", { pid }),
       });
-
-      writeJsonCommand(proc.stdin, { type: "prompt", message: prompt });
+      const terminate = () => controller.terminate();
 
       return {
-        events: proc.stdout ? wrapPiEvents(proc.stdout, proc, logger, pid) : noStdout(),
-        exited,
+        events: proc.stdout
+          ? wrapPiEvents(proc.stdout, proc, logger, pid, startedAt, terminate)
+          : noStdout(terminate),
+        exited: controller.exited,
         abort(): void {
-          writeJsonCommand(proc.stdin, { type: "abort" });
-          logger.warn("Aborting pi RPC process", { pid });
-          proc.kill("SIGTERM");
+          const signal = terminate();
+          logger.warn("Aborting pi JSON process", { pid, signal });
         },
       };
     },
@@ -105,58 +108,51 @@ async function* wrapPiEvents(
   proc: ChildProcess,
   logger: Logger,
   pid: number | undefined,
+  startedAt: number,
+  terminate: () => NodeJS.Signals,
 ): AsyncGenerator<AgentEvent> {
   const state = createPiEventState();
   try {
     for await (const raw of readJsonLines(stdout as import("node:stream").Readable)) {
       const events = mapPiEvent(raw, state);
-      if (isPiEventType(raw, "turn_end")) {
-        writeJsonCommand(proc.stdin, { id: "loop-turn-stats", type: "get_session_stats" });
-        logger.debug("Requested turn pi session stats", { pid });
-      }
-      if (isPiEventType(raw, "agent_end")) {
-        writeJsonCommand(proc.stdin, { id: "loop-final-stats", type: "get_session_stats" });
-        logger.debug("Requested final pi session stats", { pid });
-      }
-      for (const event of events) {
-        yield event;
+      for (const mappedEvent of events) {
+        const event = withMeasuredDuration(mappedEvent, startedAt);
         if (event.type === "done" || event.type === "error") {
-          logger.debug("Terminating pi RPC process after event", { pid, eventType: event.type });
-          proc.stdin?.end();
-          proc.kill("SIGTERM");
-          return;
+          logger.debug("Terminating pi JSON process after event", { pid, eventType: event.type });
+          terminate();
         }
+        yield event;
+        if (event.type === "done" || event.type === "error") return;
       }
     }
   } catch (err) {
+    terminate();
     yield { type: "error", message: err instanceof Error ? err.message : String(err) };
     return;
   }
 
   if (state.pendingDone) {
-    yield completePendingDone(state);
+    terminate();
+    yield withMeasuredDuration(completePendingDone(state), startedAt);
     return;
   }
 
   const exitCode = proc.exitCode;
   const message =
     exitCode != null
-      ? `pi RPC process exited unexpectedly (code ${exitCode})`
-      : "pi RPC stream ended without completion";
+      ? `pi JSON process exited unexpectedly (code ${exitCode})`
+      : "pi JSON stream ended without completion";
   logger.warn(message, { pid, exitCode });
+  terminate();
   yield { type: "error", message };
 }
 
-function isPiEventType(raw: unknown, type: string): boolean {
-  return (
-    typeof raw === "object" &&
-    raw !== null &&
-    !Array.isArray(raw) &&
-    "type" in raw &&
-    raw.type === type
-  );
+function withMeasuredDuration(event: AgentEvent, startedAt: number): AgentEvent {
+  if (event.type !== "done" || event.durationMs > 0) return event;
+  return { ...event, durationMs: Math.max(1, Date.now() - startedAt) };
 }
 
-async function* noStdout(): AsyncGenerator<AgentEvent> {
-  yield { type: "error", message: "pi RPC process has no stdout stream" };
+async function* noStdout(terminate: () => NodeJS.Signals): AsyncGenerator<AgentEvent> {
+  terminate();
+  yield { type: "error", message: "pi JSON process has no stdout stream" };
 }

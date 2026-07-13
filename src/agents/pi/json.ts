@@ -1,10 +1,5 @@
 import type { Readable } from "node:stream";
 
-export type PiJsonCommand =
-  | { id?: string; type: "prompt"; message: string }
-  | { id?: string; type: "abort" }
-  | { id?: string; type: "get_session_stats" };
-
 export async function* readJsonLines(stream: Readable): AsyncGenerator<unknown> {
   let buffer = "";
   let ended = false;
@@ -64,11 +59,4 @@ export async function* readJsonLines(stream: Readable): AsyncGenerator<unknown> 
     stream.off("close", onEnd);
     stream.off("error", onEnd);
   }
-}
-
-export function writeJsonCommand(
-  stdin: NodeJS.WritableStream | null | undefined,
-  command: PiJsonCommand,
-): boolean {
-  return stdin?.write(`${JSON.stringify(command)}\n`) ?? false;
 }
