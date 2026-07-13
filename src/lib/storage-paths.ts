@@ -9,6 +9,9 @@ const RECIPES_DIR_NAME = "recipes";
 const SESSIONS_DIR_NAME = "sessions";
 const SESSION_METADATA_NAME = "session.json";
 const SESSION_EVENTS_NAME = "events.jsonl";
+const SESSION_LOCK_NAME = "active.lock";
+const SESSION_LOCK_MUTATION_NAME = "active.lock.mutation";
+const LEGACY_SESSION_EVENTS_NAME = "session.jsonl";
 
 export const PROJECT_DIR_NAME = ".loop";
 export const PROJECT_TEMPLATE_NAME = "LOOP.md";
@@ -97,4 +100,20 @@ export function getSessionMetadataPath(sessionDir: string): string {
 
 export function getSessionEventsPath(sessionDir: string): string {
   return path.join(sessionDir, SESSION_EVENTS_NAME);
+}
+
+export function getSessionLockPath(sessionDir: string): string {
+  return path.join(sessionDir, SESSION_LOCK_NAME);
+}
+
+export function getSessionLockMutationPath(sessionDir: string): string {
+  return path.join(sessionDir, SESSION_LOCK_MUTATION_NAME);
+}
+
+export function getLegacyProjectSessionsDir(projectRoot: string): string {
+  return path.join(getProjectDir(projectRoot), SESSIONS_DIR_NAME);
+}
+
+export function getLegacySessionEventsPath(sessionDir: string): string {
+  return path.join(sessionDir, LEGACY_SESSION_EVENTS_NAME);
 }

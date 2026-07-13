@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import type { AgentAdapter, AgentEvent, AgentSession } from "../../agents/types.js";
 import { extractExitMarker } from "../exit-marker.js";
 import type { Logger } from "../logging.js";
@@ -14,10 +15,11 @@ export interface StepExecutorContext {
   state: PipelineState;
   isAborted: () => boolean;
   setCurrentSession: (session: AgentSession | null) => void;
-  onEvent?: (event: AgentEvent, stepIndex: number) => void;
+  onEvent?: (event: AgentEvent, stepIndex: number, executionId: string) => void;
   onStepStart?: (stepIndex: number, step: Step, iteration: number) => void;
-  onSessionComplete?: (stepIndex: number, result: SessionResult) => void;
+  onSessionComplete?: (stepIndex: number, result: SessionResult, executionId: string) => void;
   onStepComplete?: (stepIndex: number, result: StepResult) => void;
+  template?: string;
 }
 
 export async function executeStep(
@@ -35,8 +37,12 @@ export async function executeStep(
   let exitReason: StepResult["exitReason"] = "done";
   let errorMsg: string | undefined;
 
-  const { template, source: templateSource } = loadTemplate(ctx.projectRoot);
-  ctx.logger.debug("Template loaded", { templateSource, projectRoot: ctx.projectRoot });
+  const loaded = ctx.template === undefined ? loadTemplate(ctx.projectRoot) : undefined;
+  const template = ctx.template ?? loaded?.template ?? "";
+  ctx.logger.debug("Template loaded", {
+    templateSource: ctx.template === undefined ? loaded?.source : "persisted",
+    projectRoot: ctx.projectRoot,
+  });
 
   const maxIterations = step.until ? (step.max ?? Number.POSITIVE_INFINITY) : (step.repeat ?? 1);
   ctx.logger.debug("Computed maxIterations", {
@@ -76,6 +82,7 @@ export async function executeStep(
 
     ctx.logger.debug("Prompt built", { promptLength: prompt.length, stepIndex, iteration });
 
+    const executionId = crypto.randomUUID();
     const session = ctx.agent.spawn(prompt, { cwd: ctx.projectRoot, args: step.args });
     ctx.setCurrentSession(session);
     ctx.logger.info(`${stepLabel} - agent spawned`);
@@ -83,6 +90,9 @@ export async function executeStep(
     const iterResult = await processAgentEvents(
       {
         ...ctx,
+        onEvent: ctx.onEvent
+          ? (event, index) => ctx.onEvent?.(event, index, executionId)
+          : undefined,
         onUsageDelta(costDelta, usageDelta) {
           ctx.state.costUsd += costDelta;
           ctx.state.currentSessionCostUsd += costDelta;
@@ -112,7 +122,7 @@ export async function executeStep(
       exitReason = "error";
       errorMsg = iterResult.errorMsg;
       ctx.logger.error(`${stepLabel} - error: ${errorMsg}`);
-      emitSessionComplete(ctx, stepIndex, iteration, iterResult, exitReason, errorMsg);
+      emitSessionComplete(ctx, stepIndex, iteration, executionId, iterResult, exitReason, errorMsg);
       break;
     }
 
@@ -120,7 +130,7 @@ export async function executeStep(
       ctx.logger.warn("Abort detected after iteration", { stepIndex, iteration });
       exitReason = "error";
       errorMsg = "Aborted";
-      emitSessionComplete(ctx, stepIndex, iteration, iterResult, exitReason, errorMsg);
+      emitSessionComplete(ctx, stepIndex, iteration, executionId, iterResult, exitReason, errorMsg);
       break;
     }
 
@@ -135,7 +145,7 @@ export async function executeStep(
     );
 
     exitReason = loopResult.exitReason;
-    emitSessionComplete(ctx, stepIndex, iteration, iterResult, exitReason);
+    emitSessionComplete(ctx, stepIndex, iteration, executionId, iterResult, exitReason);
     if (loopResult.shouldBreak) break;
     previousIterationSummary = loopResult.previousIterationSummary;
     iteration++;
@@ -160,19 +170,24 @@ function emitSessionComplete(
   ctx: StepExecutorContext,
   stepIndex: number,
   iteration: number,
+  executionId: string,
   iterResult: IterationResult,
   exitReason: StepResult["exitReason"],
   error?: string,
 ): void {
-  ctx.onSessionComplete?.(stepIndex, {
-    iteration,
-    result: iterResult.result,
-    costUsd: iterResult.cost,
-    durationMs: iterResult.duration,
-    usage: iterResult.usage,
-    exitReason,
-    error,
-  });
+  ctx.onSessionComplete?.(
+    stepIndex,
+    {
+      iteration,
+      result: iterResult.result,
+      costUsd: iterResult.cost,
+      durationMs: iterResult.duration,
+      usage: iterResult.usage,
+      exitReason,
+      error,
+    },
+    executionId,
+  );
 }
 
 interface LoopEvaluation {

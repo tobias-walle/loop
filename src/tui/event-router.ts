@@ -1,9 +1,9 @@
-import { type Component, type Container, Spacer, Text } from "@mariozechner/pi-tui";
+import { type Container, Spacer, Text } from "@mariozechner/pi-tui";
 import type { AgentEvent } from "../agents/types.js";
 import type { AgentArgs } from "../lib/agent-args.js";
-import { dim, dimGray } from "../lib/ansi.js";
+import { dim } from "../lib/ansi.js";
 import type { RunSummary, TokenUsage } from "../lib/types.js";
-import { ThinkingIndicator } from "./components/thinking-indicator.js";
+import { appendRunBoundary } from "./components/run-boundary.js";
 import type { ChildContainer, LoopTUIState } from "./event-handlers.js";
 import {
   ROOT_KEY,
@@ -15,10 +15,12 @@ import {
 import {
   formatCompletion,
   formatError,
+  formatInterruption,
   formatRetry,
   formatRunSummary,
   formatStepHeaderLines,
 } from "./formatters.js";
+import { createThinkingIndicators } from "./thinking-indicators.js";
 
 export type { ChildContainer, LoopTUIState } from "./event-handlers.js";
 
@@ -33,20 +35,14 @@ type ShowStepHeader = (
   agentArgs?: AgentArgs,
 ) => void;
 
-class Separator implements Component {
-  invalidate(): void {}
-
-  render(width: number): string[] {
-    return [dimGray("─".repeat(width))];
-  }
-}
-
 export function createEventRouter(
   root: Container,
   requestRender: () => void,
 ): {
   state: LoopTUIState;
   handleEvent: (event: AgentEvent, stepIndex: number) => void;
+  finishActiveSession: () => void;
+  showInterruption: () => void;
   showStepHeader: ShowStepHeader;
   showCompletion: (
     type: "done" | "loop_done" | "max_reached",
@@ -67,38 +63,14 @@ export function createEventRouter(
   };
 
   let sessionDone = false;
+  const thinking = createThinkingIndicators(
+    state.thinkingIndicators,
+    requestRender,
+    () => !sessionDone,
+  );
 
   function currentContainer(): ChildContainer {
     return state.containerStack[state.containerStack.length - 1];
-  }
-
-  function addThinkingIndicator(
-    key: string,
-    container: ChildContainer,
-    label: "waiting" | "thinking" = "waiting",
-  ): void {
-    if (sessionDone || state.thinkingIndicators.has(key)) return;
-    const thinking = new ThinkingIndicator(requestRender);
-    thinking.setText(label);
-    container.addChild(thinking);
-    thinking.start();
-    state.thinkingIndicators.set(key, { node: thinking, parent: container });
-    requestRender();
-  }
-
-  function removeThinkingIndicator(key: string): void {
-    const indicator = state.thinkingIndicators.get(key);
-    if (indicator) {
-      indicator.node.stop();
-      indicator.parent.removeChild(indicator.node);
-      state.thinkingIndicators.delete(key);
-    }
-  }
-
-  function removeAllThinkingIndicators(): void {
-    for (const [key] of state.thinkingIndicators) {
-      removeThinkingIndicator(key);
-    }
   }
 
   function containerForEvent(id: string | null): ChildContainer {
@@ -139,14 +111,14 @@ export function createEventRouter(
 
     if (event.type === "text_delta" || event.type === "tool_start") {
       const key = event.parentToolUseId ?? ROOT_KEY;
-      if (state.thinkingIndicators.has(key)) {
-        removeThinkingIndicator(key);
+      if (thinking.has(key)) {
+        thinking.remove(key);
         requestRender();
       }
     }
     if (event.type === "error") {
-      if (state.thinkingIndicators.has(ROOT_KEY)) {
-        removeThinkingIndicator(ROOT_KEY);
+      if (thinking.has(ROOT_KEY)) {
+        thinking.remove(ROOT_KEY);
         requestRender();
       }
     }
@@ -159,7 +131,7 @@ export function createEventRouter(
         state.textBlocks.delete(event.parentToolUseId ?? ROOT_KEY);
         const key = event.parentToolUseId ?? ROOT_KEY;
         const container = containerForEvent(event.parentToolUseId);
-        addThinkingIndicator(key, container, "thinking");
+        thinking.add(key, container, "thinking");
         break;
       }
       case "tool_start":
@@ -167,7 +139,7 @@ export function createEventRouter(
         if (event.tool === "Task" || event.tool === "Agent") {
           const subContainer = state.toolIdToContainer.get(event.toolId);
           if (subContainer) {
-            addThinkingIndicator(event.toolId, subContainer);
+            thinking.add(event.toolId, subContainer);
           }
         }
         break;
@@ -175,7 +147,7 @@ export function createEventRouter(
         state.toolIdToContainer.delete(event.toolId);
         const key = event.parentToolUseId ?? ROOT_KEY;
         const container = containerForEvent(event.parentToolUseId);
-        addThinkingIndicator(key, container);
+        thinking.add(key, container);
         break;
       }
       case "retry": {
@@ -195,20 +167,31 @@ export function createEventRouter(
       case "task_started": {
         handleTaskStarted(event, state, requestRender, currentContainer);
         const subContainer = state.toolIdToContainer.get(event.toolUseId);
-        if (subContainer) addThinkingIndicator(event.toolUseId, subContainer);
+        if (subContainer) thinking.add(event.toolUseId, subContainer);
         break;
       }
       case "task_done":
-        removeThinkingIndicator(event.toolUseId);
+        thinking.remove(event.toolUseId);
         handleTaskDone(event, state, requestRender, currentContainer);
         break;
       case "done":
         sessionDone = true;
-        removeAllThinkingIndicators();
+        thinking.removeAll();
         break;
       default:
         break;
     }
+  }
+
+  function finishActiveSession(): void {
+    sessionDone = true;
+    thinking.removeAll();
+  }
+
+  function showInterruption(): void {
+    finishActiveSession();
+    appendRunBoundary(root, formatInterruption());
+    requestRender();
   }
 
   function showStepHeader(
@@ -235,7 +218,7 @@ export function createEventRouter(
     state.toolIdToContainer.clear();
     state.toolIdToParentContainer.clear();
     state.textBlocks.clear();
-    removeAllThinkingIndicators();
+    thinking.removeAll();
     sessionDone = false;
     root.addChild(new Spacer());
     const metaNode = new Text(metaLine, 0, 0);
@@ -255,10 +238,7 @@ export function createEventRouter(
       metaNode,
       taskNode,
     };
-    const thinking = new ThinkingIndicator(requestRender);
-    root.addChild(thinking);
-    thinking.start();
-    state.thinkingIndicators.set(ROOT_KEY, { node: thinking, parent: root });
+    thinking.add(ROOT_KEY, root);
     requestRender();
   }
 
@@ -269,11 +249,7 @@ export function createEventRouter(
     costUsd?: number,
     usage?: TokenUsage,
   ): void {
-    root.addChild(new Spacer());
-    const text = formatCompletion(type, durationMs, iterations, costUsd, usage);
-    root.addChild(new Text(text, 0, 0));
-    root.addChild(new Spacer());
-    root.addChild(new Separator());
+    appendRunBoundary(root, formatCompletion(type, durationMs, iterations, costUsd, usage));
     requestRender();
   }
 
@@ -291,6 +267,8 @@ export function createEventRouter(
   return {
     state,
     handleEvent,
+    finishActiveSession,
+    showInterruption,
     showStepHeader,
     showCompletion,
     showSessionInfo,

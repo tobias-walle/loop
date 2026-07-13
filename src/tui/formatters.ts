@@ -179,6 +179,10 @@ export function formatTokenCount(n: number): string {
   return String(n);
 }
 
+export function formatInterruption(): string {
+  return formatStatusLine("▲", "interrupted", "", yellow);
+}
+
 export function formatCompletion(
   type: "done" | "loop_done" | "max_reached",
   durationMs: number,

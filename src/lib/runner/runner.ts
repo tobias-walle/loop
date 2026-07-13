@@ -1,23 +1,41 @@
 import type { AgentAdapter, AgentEvent, AgentSession } from "../../agents/types.js";
 import { type Logger, noopLogger } from "../logging.js";
-import type { PipelineState, RunResult, SessionResult, Step, StepResult } from "../types.js";
+import type {
+  PipelineState,
+  RunResult,
+  RunSummary,
+  SessionResult,
+  Step,
+  StepResult,
+} from "../types.js";
 import { emptyUsage } from "./prompt-builder.js";
 import { executeStep } from "./step-executor.js";
+
+export interface RunnerResumeOptions {
+  startStepIndex: number;
+  previousSummary?: string;
+  priorStepResults?: StepResult[];
+  priorTotals?: RunSummary;
+}
 
 export interface RunnerOptions {
   agent: AgentAdapter;
   agentName?: string;
   projectRoot?: string;
   logger?: Logger;
-  onEvent?: (event: AgentEvent, stepIndex: number) => void;
+  onEvent?: (event: AgentEvent, stepIndex: number, executionId: string) => void;
   onStepStart?: (stepIndex: number, step: Step, iteration: number) => void;
-  onSessionComplete?: (stepIndex: number, result: SessionResult) => void;
+  onSessionComplete?: (stepIndex: number, result: SessionResult, executionId: string) => void;
   onStepComplete?: (stepIndex: number, result: StepResult) => void;
+  onStepExecutionStart?: (stepIndex: number, step: Step) => void;
+  template?: string;
+  resume?: RunnerResumeOptions;
 }
 
 export interface Runner {
   run(): Promise<RunResult>;
   abort(): void;
+  abortAndWait(): Promise<void>;
   getState(): PipelineState;
 }
 
@@ -27,15 +45,16 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
   let aborted = false;
   let currentSession: AgentSession | null = null;
 
+  const priorTotals = opts.resume?.priorTotals;
   const state: PipelineState = {
-    step: 0,
+    step: opts.resume?.startStepIndex ?? 0,
     totalSteps: steps.length,
     iteration: 1,
-    costUsd: 0,
+    costUsd: priorTotals?.totalCostUsd ?? 0,
     currentSessionCostUsd: 0,
-    durationMs: 0,
+    durationMs: priorTotals?.totalDurationMs ?? 0,
     startTime: Date.now(),
-    usage: emptyUsage(),
+    usage: priorTotals ? { ...priorTotals.totalUsage } : emptyUsage(),
     currentSessionUsage: emptyUsage(),
   };
 
@@ -46,12 +65,17 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
 
   return {
     async run(): Promise<RunResult> {
-      const stepResults: StepResult[] = [];
-      let previousSummary: string | undefined;
+      const stepResults: StepResult[] = [...(opts.resume?.priorStepResults ?? [])];
+      const newResults: StepResult[] = [];
+      let previousSummary = opts.resume?.previousSummary;
+      const startStepIndex = opts.resume?.startStepIndex ?? 0;
 
-      logger.info("Run started", { totalSteps: steps.length });
+      if (startStepIndex < 0 || startStepIndex > steps.length)
+        throw new Error(`Invalid resume step index ${startStepIndex}.`);
 
-      for (let i = 0; i < steps.length; i++) {
+      logger.info("Run started", { totalSteps: steps.length, startStepIndex });
+
+      for (let i = startStepIndex; i < steps.length; i++) {
         if (aborted) {
           appendSkipped(stepResults, steps, i, "Skipped due to abort", logger);
           break;
@@ -70,6 +94,7 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
         });
 
         const stepStart = Date.now();
+        opts.onStepExecutionStart?.(i, step);
         const result = await executeStep(
           {
             agent: opts.agent,
@@ -85,12 +110,14 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
             onStepStart: opts.onStepStart,
             onSessionComplete: opts.onSessionComplete,
             onStepComplete: opts.onStepComplete,
+            template: opts.template,
           },
           i,
           step,
           previousSummary,
         );
         stepResults.push(result);
+        newResults.push(result);
 
         logger.info("Step execution completed", {
           stepIndex: i,
@@ -113,16 +140,20 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
         previousSummary = result.result.slice(-500);
       }
 
-      const totalCost = stepResults.reduce((s, r) => s + r.costUsd, 0);
-      const totalDuration = stepResults.reduce((s, r) => s + r.durationMs, 0);
-      const totalUsage = stepResults.reduce(
-        (s, r) => ({
-          inputTokens: s.inputTokens + r.usage.inputTokens,
-          outputTokens: s.outputTokens + r.usage.outputTokens,
-          cacheCreationTokens: s.cacheCreationTokens + r.usage.cacheCreationTokens,
-          cacheReadTokens: s.cacheReadTokens + r.usage.cacheReadTokens,
+      const totalCost =
+        (priorTotals?.totalCostUsd ?? 0) +
+        newResults.reduce((sum, result) => sum + result.costUsd, 0);
+      const totalDuration =
+        (priorTotals?.totalDurationMs ?? 0) +
+        newResults.reduce((sum, result) => sum + result.durationMs, 0);
+      const totalUsage = newResults.reduce(
+        (sum, result) => ({
+          inputTokens: sum.inputTokens + result.usage.inputTokens,
+          outputTokens: sum.outputTokens + result.usage.outputTokens,
+          cacheCreationTokens: sum.cacheCreationTokens + result.usage.cacheCreationTokens,
+          cacheReadTokens: sum.cacheReadTokens + result.usage.cacheReadTokens,
         }),
-        emptyUsage(),
+        priorTotals ? { ...priorTotals.totalUsage } : emptyUsage(),
       );
       const success = stepResults.every((r) => r.exitReason !== "error");
 
@@ -147,6 +178,15 @@ export function createRunner(steps: Step[], opts: RunnerOptions): Runner {
       logger.warn("Abort called", { hadActiveSession: currentSession != null });
       aborted = true;
       currentSession?.abort();
+    },
+
+    async abortAndWait(): Promise<void> {
+      logger.warn("Abort and wait called", { hadActiveSession: currentSession != null });
+      aborted = true;
+      const session = currentSession;
+      session?.abort();
+      await session?.exited;
+      if (currentSession === session) currentSession = null;
     },
 
     getState(): PipelineState {

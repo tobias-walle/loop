@@ -410,6 +410,19 @@ describe("createEventRouter", () => {
     expect(renderChild(root, 5)).toContain("thinking");
   });
 
+  test("showInterruption closes the active step with a visible marker", () => {
+    const { root, router } = setup();
+    router.showStepHeader(1, 1, "Work");
+
+    router.showInterruption();
+
+    const rendered = root.render(200).join("\n");
+    expect(rendered).toContain("▲");
+    expect(rendered).toContain("interrupted");
+    expect(router.state.thinkingIndicators.size).toBe(0);
+    expect(stripAnsi(rendered)).toContain("─");
+  });
+
   test("showCompletion adds marker", () => {
     const { root, router } = setup();
 

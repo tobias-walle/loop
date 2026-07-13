@@ -1,6 +1,9 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { type StoredInvocation, appendSessionEvent, createEvent } from "./session-events.js";
+import { reduceSessionEvents } from "./session-reducer.js";
+import { writeSessionProjection } from "./session-store.js";
 import { getSessionMetadataPath, getSessionsDir } from "./storage-paths.js";
 
 export type SessionStatus = "running" | "completed" | "failed" | "aborted";
@@ -53,9 +56,30 @@ export function createSessionDir(
     status: "running",
   };
 
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(getSessionMetadataPath(dir), `${JSON.stringify(metadata, null, 2)}\n`, "utf-8");
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.chmodSync(dir, 0o700);
+  fs.writeFileSync(getSessionMetadataPath(dir), `${JSON.stringify(metadata, null, 2)}\n`, {
+    encoding: "utf-8",
+    mode: 0o600,
+  });
   return dir;
+}
+
+export function createResumableSession(
+  invocation: Omit<StoredInvocation, "sessionId" | "projectRoot"> & { projectRoot?: string },
+  env: NodeJS.ProcessEnv = process.env,
+): { sessionDir: string; invocation: StoredInvocation } {
+  const projectRoot = invocation.projectRoot ?? process.cwd();
+  const sessionDir = createSessionDir(projectRoot, env);
+  const stored: StoredInvocation = {
+    ...invocation,
+    sessionId: path.basename(sessionDir),
+    projectRoot: canonicalProjectRoot(projectRoot),
+  };
+  const created = createEvent("session_created", stored);
+  appendSessionEvent(sessionDir, created);
+  writeSessionProjection(sessionDir, reduceSessionEvents([created]));
+  return { sessionDir, invocation: stored };
 }
 
 export function updateSessionStatus(

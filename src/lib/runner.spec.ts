@@ -98,6 +98,25 @@ describe("runner", () => {
     expect(result.stepResults[0].costUsd).toBe(0.03);
   });
 
+  test("assigns a stable execution ID to each agent iteration", async () => {
+    const eventExecutions: string[] = [];
+    const completedExecutions: string[] = [];
+    const runner = createRunner([{ type: "task", task: "Work", repeat: 2 }], {
+      agent: createStubAdapter([
+        { turns: [{ text: "one" }], cost: 0, duration: 0 },
+        { turns: [{ text: "two" }], cost: 0, duration: 0 },
+      ]),
+      onEvent: (_event, _stepIndex, executionId) => eventExecutions.push(executionId),
+      onSessionComplete: (_stepIndex, _result, executionId) =>
+        completedExecutions.push(executionId),
+    });
+
+    await runner.run();
+
+    expect(new Set(completedExecutions).size).toBe(2);
+    expect(eventExecutions.every((id) => completedExecutions.includes(id))).toBe(true);
+  });
+
   test("onSessionComplete fires after every iteration", async () => {
     const steps: Step[] = [{ type: "task", task: "Run tests", repeat: 3 }];
     const scenarios: Scenario[] = [
@@ -364,6 +383,65 @@ describe("runner", () => {
     expect(prompts[1]).toContain("Result from step one");
   });
 
+  test("resume skips completed steps and restores their summary and totals", async () => {
+    const steps: Step[] = [
+      { type: "task", task: "First task" },
+      { type: "task", task: "Second task" },
+    ];
+    const prompts: string[] = [];
+    const started: number[] = [];
+    const adapter = {
+      spawn(prompt: string) {
+        prompts.push(prompt);
+        return createStubAdapter({
+          turns: [{ text: "Second done" }],
+          cost: 0.005,
+          duration: 500,
+          usage: { inputTokens: 100, outputTokens: 20 },
+        }).spawn(prompt);
+      },
+    };
+    const priorResult = {
+      step: steps[0],
+      iterations: 1,
+      result: "First persisted summary",
+      costUsd: 0.01,
+      durationMs: 1000,
+      usage: {
+        inputTokens: 10,
+        outputTokens: 5,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+      },
+      exitReason: "done" as const,
+    };
+
+    const runner = createRunner(steps, {
+      agent: adapter,
+      projectRoot: `/tmp/loop-test-resume-${Date.now()}`,
+      resume: {
+        startStepIndex: 1,
+        previousSummary: "First persisted summary",
+        priorStepResults: [priorResult],
+        priorTotals: {
+          totalCostUsd: 0.01,
+          totalDurationMs: 1000,
+          totalUsage: priorResult.usage,
+        },
+      },
+      onStepExecutionStart: (index) => started.push(index),
+    });
+    const result = await runner.run();
+
+    expect(started).toEqual([1]);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("First persisted summary");
+    expect(result.stepResults).toHaveLength(2);
+    expect(result.totalCostUsd).toBe(0.015);
+    expect(result.totalDurationMs).toBe(1500);
+    expect(result.totalUsage.inputTokens).toBe(110);
+  });
+
   test("previousIterationSummary passing within a loop", async () => {
     const steps: Step[] = [{ type: "task", task: "Fix bugs", until: "All fixed" }];
 
@@ -444,6 +522,58 @@ describe("runner", () => {
       (r) => r.error?.includes("abort") || r.error?.includes("Abort") || r.error?.includes("Skip"),
     );
     expect(skipped.length).toBeGreaterThan(0);
+  });
+
+  test("can await active agent shutdown after a callback failure", async () => {
+    let abortCalls = 0;
+    let exited = false;
+    let resolveExit: (() => void) | undefined;
+    const exitedPromise = new Promise<void>((resolve) => {
+      resolveExit = () => {
+        exited = true;
+        resolve();
+      };
+    });
+    const adapter = {
+      spawn() {
+        return {
+          events: (async function* () {
+            yield {
+              type: "session_start" as const,
+              model: "stub",
+              sessionId: "stub-session",
+              tools: [],
+            };
+          })(),
+          exited: exitedPromise,
+          abort() {
+            abortCalls++;
+            setTimeout(() => resolveExit?.(), 20);
+          },
+        };
+      },
+    };
+    const runner = createRunner([{ type: "task", task: "work" }], {
+      agent: adapter,
+      onEvent() {
+        throw new Error("event persistence failed");
+      },
+    });
+
+    let runError: unknown;
+    try {
+      await runner.run();
+    } catch (error) {
+      runError = error;
+    }
+    expect(runError).toBeInstanceOf(Error);
+    expect((runError as Error).message).toBe("event persistence failed");
+
+    const awaitableRunner = runner as unknown as { abortAndWait?: () => Promise<void> };
+    expect(typeof awaitableRunner.abortAndWait).toBe("function");
+    await awaitableRunner.abortAndWait?.();
+    expect(abortCalls).toBe(1);
+    expect(exited).toBe(true);
   });
 
   test("ralph loop without markers treats as LOOP_CONTINUE", async () => {

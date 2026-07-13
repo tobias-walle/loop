@@ -151,7 +151,15 @@ describe("architecture rules", () => {
     const violations: string[] = [];
     const fsWritePattern =
       /\b(writeFileSync|appendFileSync|createWriteStream|writeFile|appendFile)\b/;
-    const allowlist = new Set(["lib/logging.ts", "lib/session.ts", "cli.ts"]);
+    const allowlist = new Set([
+      "lib/logging.ts",
+      "lib/session.ts",
+      "lib/session-events.ts",
+      "lib/session-lock.ts",
+      "lib/session-store.ts",
+      "commands/init-command.ts",
+      "cli.ts",
+    ]);
 
     for (const file of files) {
       const rel = relativePath(file);

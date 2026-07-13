@@ -22,7 +22,7 @@ export type Step =
 /** Configuration derived from CLI parsing. */
 export type LoopConfig = {
   steps: Step[];
-  command?: "init" | "init-recipe" | "help" | "version";
+  command?: "init" | "init-recipe" | "resume" | "help" | "version";
   agent?: "claude" | "pi";
   recipe?: {
     name: string;

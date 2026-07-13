@@ -1,11 +1,7 @@
-import { type Component, type Focusable, truncateToWidth } from "@mariozechner/pi-tui";
+import { type Component, truncateToWidth } from "@mariozechner/pi-tui";
 import { cyan, dim, dimGray, green } from "../../lib/ansi.js";
 import type { TokenUsage } from "../../lib/types.js";
 import { formatDuration, formatTokens } from "../formatters.js";
-
-const CTRL_C = String.fromCharCode(3);
-const ESC = String.fromCharCode(27);
-const KITTY_CTRL_C = `${ESC}[99;5u`;
 
 interface StatusInfo {
   step?: number;
@@ -20,11 +16,7 @@ interface StatusInfo {
 }
 
 /** Bottom overlay with run stats and minimal Ctrl+C handling. */
-export class StatusBar implements Component, Focusable {
-  focused = false;
-
-  onInterrupt: (() => void) | undefined;
-
+export class StatusBar implements Component {
   private status: StatusInfo = {};
   private startTime: number | null = null;
   private hidden = false;
@@ -50,12 +42,6 @@ export class StatusBar implements Component, Focusable {
     const sep = dimGray("─".repeat(width));
     const footerLine = this.buildFooterLine(width);
     return ["", sep, footerLine];
-  }
-
-  handleInput(data: string): void {
-    if (data === CTRL_C || data === KITTY_CTRL_C) {
-      this.onInterrupt?.();
-    }
   }
 
   private buildFooterLine(width: number): string {

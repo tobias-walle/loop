@@ -51,9 +51,9 @@ describe("sessions", () => {
     const entries = fs.readFileSync(getSessionEventsPath(sessionDir), "utf-8").trim().split("\n");
     expect(entries).toHaveLength(1);
     expect(JSON.parse(entries[0] ?? "{}")).toMatchObject({
-      level: "info",
-      message: "Started",
-      type: "test",
+      version: 1,
+      type: "diagnostic",
+      data: { level: "info", message: "Started", type: "test" },
     });
   });
 

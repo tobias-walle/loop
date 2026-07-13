@@ -24,6 +24,21 @@ describe("parseArgs", () => {
     });
   });
 
+  describe("resume command", () => {
+    test("parses exact resume command", () => {
+      expect(parseArgs(["resume"])).toEqual({ steps: [], command: "resume" });
+    });
+
+    test.each([
+      ["resume", "another task"],
+      ["--agent", "pi", "resume"],
+      ["resume", "--", "--profile", "fast"],
+      ["--recipe", "resume"],
+    ])("rejects incompatible arguments: %p", (...args) => {
+      expect(() => parseArgs(args)).toThrow("resume accepts no other arguments");
+    });
+  });
+
   describe("init subcommands", () => {
     test("parses init command", () => {
       const result = parseArgs(["init"]);
@@ -86,6 +101,7 @@ describe("parseArgs", () => {
       expect(help).toContain("Commands:");
       expect(help).toContain("init");
       expect(help).toContain("init-recipe");
+      expect(help).toContain("resume");
     });
 
     test("includes flags section", () => {

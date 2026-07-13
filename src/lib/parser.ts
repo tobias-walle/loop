@@ -8,6 +8,7 @@ export class ParseError extends Error {
 }
 
 const COMMANDS = {
+  resume: "Inspect and continue an unfinished session",
   init: "Create a .loop/LOOP.md project template",
   "init-recipe <name>": "Create a YAML recipe template in .loop/recipes",
 } as const;
@@ -38,13 +39,14 @@ const EXAMPLES = [
   ['loop [ "Write code" "Review" ] --repeat 3', "Repeat a group of tasks"],
   ["loop --recipe implement --plan ./PLAN.md", "Run a named recipe with a named argument"],
   ["loop -r implement ./PLAN.md", "Run a named recipe with a positional argument"],
+  ["loop resume", "Inspect and continue an unfinished session"],
   ["loop init-recipe implement", "Create a YAML recipe template"],
   ["loop init", "Create a .loop/LOOP.md project template"],
 ] as const;
 
 export function formatHelp(): string {
   const lines: string[] = [
-    "Usage: loop <tasks...> [flags] | loop --recipe <name> [recipe-args...] | loop init-recipe <name>",
+    "Usage: loop <tasks...> [flags] | loop resume | loop --recipe <name> [recipe-args...] | loop init-recipe <name>",
     "",
     "Run AI agent tasks in sequence, loops, or groups.",
     "",
@@ -83,14 +85,17 @@ export function parseArgs(args: string[]): LoopConfig {
     throw new ParseError(`No arguments provided.\n\n${formatHelp()}`);
   }
 
-  // Handle --help / -h anywhere in args
   if (loopArgs.includes("--help") || loopArgs.includes("-h")) {
     return { steps: [], command: "help" };
   }
 
-  // Handle --version / -v
   if (loopArgs.includes("--version") || loopArgs.includes("-v")) {
     return { steps: [], command: "version" };
+  }
+
+  if (args.includes("resume")) {
+    if (args.length !== 1) throw new ParseError("resume accepts no other arguments.");
+    return { steps: [], command: "resume" };
   }
 
   let agent: LoopConfig["agent"];
@@ -162,7 +167,6 @@ export function parseArgs(args: string[]): LoopConfig {
     }
 
     if (arg === "[") {
-      // Parse group
       i++;
       const tasks: string[] = [];
       while (i < loopArgs.length && loopArgs[i] !== "]") {
@@ -183,7 +187,6 @@ export function parseArgs(args: string[]): LoopConfig {
       if (tasks.length === 0) {
         throw new ParseError("Empty group. Add at least one task inside [ ].");
       }
-      // Skip the "]"
       i++;
       const step: Step = { type: "group", tasks };
       i = consumeFlags(loopArgs, i, step);

@@ -126,28 +126,6 @@ describe("StatusBar", () => {
     });
   });
 
-  describe("ctrl+c behavior", () => {
-    it("triggers interrupt", () => {
-      const bar = new StatusBar();
-      let interrupted = false;
-      bar.onInterrupt = () => {
-        interrupted = true;
-      };
-      bar.handleInput("\x03");
-      expect(interrupted).toBe(true);
-    });
-
-    it("triggers interrupt for kitty protocol ctrl+c", () => {
-      const bar = new StatusBar();
-      let interrupted = false;
-      bar.onInterrupt = () => {
-        interrupted = true;
-      };
-      bar.handleInput("\x1b[99;5u");
-      expect(interrupted).toBe(true);
-    });
-  });
-
   describe("hide", () => {
     it("returns empty lines when hidden", () => {
       const bar = new StatusBar();
