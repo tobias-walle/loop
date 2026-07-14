@@ -1,12 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { formatHelp } from "../lib/parser.js";
+import { formatHelp } from "../lib/cli-command.js";
 import type { LoopConfig } from "../lib/types.js";
 import { runInitCommand } from "./init-command.js";
 
 export function handlePreTuiCommand(config: LoopConfig, write: (message: string) => void): boolean {
   if (config.command === "help") {
-    write(formatHelp());
+    write(config.helpText ?? formatHelp());
     return true;
   }
   if (config.command === "version") {

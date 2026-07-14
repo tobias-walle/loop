@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@mariozechner/pi-tui": "^0.63.1",
+    "commander": "^15.0.0",
     "proper-lockfile": "^4.1.2",
     "smol-toml": "^1.6.1",
     "yaml": "^2.9.0",

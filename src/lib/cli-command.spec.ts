@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { ParseError, formatHelp, parseArgs } from "./parser";
+import { Command } from "commander";
+import { CliError, createCliCommand, formatHelp, parseCliArgs } from "./cli-command";
 
-describe("parseArgs", () => {
+describe("parseCliArgs", () => {
+  test("builds the CLI with Commander", () => {
+    expect(createCliCommand()).toBeInstanceOf(Command);
+  });
+
   describe("single task", () => {
     test("parses a single task string", () => {
-      const result = parseArgs(["Create an about page"]);
+      const result = parseCliArgs(["Create an about page"]);
       expect(result).toEqual({
         steps: [{ type: "task", task: "Create an about page" }],
       });
@@ -13,7 +18,7 @@ describe("parseArgs", () => {
 
   describe("sequential tasks", () => {
     test("parses multiple tasks in sequence", () => {
-      const result = parseArgs(["task1", "task2", "task3"]);
+      const result = parseCliArgs(["task1", "task2", "task3"]);
       expect(result).toEqual({
         steps: [
           { type: "task", task: "task1" },
@@ -26,22 +31,26 @@ describe("parseArgs", () => {
 
   describe("resume command", () => {
     test("parses exact resume command", () => {
-      expect(parseArgs(["resume"])).toEqual({ steps: [], command: "resume" });
+      expect(parseCliArgs(["resume"])).toEqual({ steps: [], command: "resume" });
     });
 
     test.each([
       ["resume", "another task"],
-      ["--agent", "pi", "resume"],
       ["resume", "--", "--profile", "fast"],
-      ["--recipe", "resume"],
-    ])("rejects incompatible arguments: %p", (...args) => {
-      expect(() => parseArgs(args)).toThrow("resume accepts no other arguments");
+    ])("rejects excess arguments with Commander: %p", (...args) => {
+      expect(() => parseCliArgs(args)).toThrow("too many arguments for 'resume'");
+    });
+
+    test("rejects global options for resume", () => {
+      expect(() => parseCliArgs(["--agent", "pi", "resume"])).toThrow(
+        "resume accepts no other arguments",
+      );
     });
   });
 
   describe("init subcommands", () => {
     test("defaults init to user scope", () => {
-      expect(parseArgs(["init"])).toEqual({
+      expect(parseCliArgs(["init"])).toEqual({
         steps: [],
         command: "init",
         initScope: "user",
@@ -49,7 +58,7 @@ describe("parseArgs", () => {
     });
 
     test("parses project init with a template", () => {
-      expect(parseArgs(["init", "--project", "--include-template"])).toEqual({
+      expect(parseCliArgs(["init", "--project", "--include-template"])).toEqual({
         steps: [],
         command: "init",
         initScope: "project",
@@ -58,7 +67,7 @@ describe("parseArgs", () => {
     });
 
     test("defaults init-recipe to user scope", () => {
-      expect(parseArgs(["init-recipe", "implement"])).toEqual({
+      expect(parseCliArgs(["init-recipe", "implement"])).toEqual({
         steps: [],
         command: "init-recipe",
         initRecipeName: "implement",
@@ -67,64 +76,75 @@ describe("parseArgs", () => {
     });
 
     test("parses init-recipe scope before or after its name", () => {
-      expect(parseArgs(["init-recipe", "--project", "implement"])).toMatchObject({
+      expect(parseCliArgs(["init-recipe", "--project", "implement"])).toMatchObject({
         initRecipeName: "implement",
         initScope: "project",
       });
-      expect(parseArgs(["init-recipe", "implement", "--project"])).toMatchObject({
+      expect(parseCliArgs(["init-recipe", "implement", "--project"])).toMatchObject({
         initRecipeName: "implement",
         initScope: "project",
       });
     });
 
     test("rejects conflicting init scopes", () => {
-      expect(() => parseArgs(["init", "--user", "--project"])).toThrow(
+      expect(() => parseCliArgs(["init", "--user", "--project"])).toThrow(
         "--user and --project cannot be combined",
       );
-      expect(() => parseArgs(["init-recipe", "implement", "--project", "--user"])).toThrow(
+      expect(() => parseCliArgs(["init-recipe", "implement", "--project", "--user"])).toThrow(
         "--user and --project cannot be combined",
       );
     });
 
     test("rejects user templates", () => {
-      expect(() => parseArgs(["init", "--include-template"])).toThrow(
+      expect(() => parseCliArgs(["init", "--include-template"])).toThrow(
         "--include-template requires --project",
       );
     });
 
-    test("rejects init-recipe without exactly one name", () => {
-      expect(() => parseArgs(["init-recipe"])).toThrow("init-recipe requires a name");
-      expect(() => parseArgs(["init-recipe", "one", "two"])).toThrow(
-        "init-recipe accepts exactly one name",
+    test("uses Commander to require exactly one recipe name", () => {
+      expect(() => parseCliArgs(["init-recipe"])).toThrow("missing required argument 'name'");
+      expect(() => parseCliArgs(["init-recipe", "one", "two"])).toThrow(
+        "too many arguments for 'init-recipe'",
       );
     });
   });
 
   describe("help", () => {
-    test("--help returns help command", () => {
-      const result = parseArgs(["--help"]);
-      expect(result).toEqual({ steps: [], command: "help" });
+    test("--help returns root help", () => {
+      const result = parseCliArgs(["--help"]);
+      expect(result).toMatchObject({ steps: [], command: "help" });
+      expect(result.helpText).toContain("Usage: loop");
     });
 
-    test("-h returns help command", () => {
-      const result = parseArgs(["-h"]);
-      expect(result).toEqual({ steps: [], command: "help" });
+    test("-h returns root help", () => {
+      const result = parseCliArgs(["-h"]);
+      expect(result).toMatchObject({ steps: [], command: "help" });
+      expect(result.helpText).toContain("Usage: loop");
     });
 
     test("--help anywhere in args returns help", () => {
-      const result = parseArgs(["task", "--help"]);
-      expect(result).toEqual({ steps: [], command: "help" });
+      const result = parseCliArgs(["task", "--help"]);
+      expect(result).toMatchObject({ steps: [], command: "help" });
+      expect(result.helpText).toContain("Usage: loop");
+    });
+
+    test("shows context-specific help for init-recipe", () => {
+      const result = parseCliArgs(["init-recipe", "--help"]);
+      expect(result).toMatchObject({ steps: [], command: "help" });
+      expect(result.helpText).toContain("Usage: loop init-recipe [options] <name>");
+      expect(result.helpText).toContain("--project");
+      expect(result.helpText).not.toContain("--recipe <name>");
     });
   });
 
   describe("version", () => {
     test("--version returns version command", () => {
-      const result = parseArgs(["--version"]);
+      const result = parseCliArgs(["--version"]);
       expect(result).toEqual({ steps: [], command: "version" });
     });
 
     test("-v returns version command", () => {
-      const result = parseArgs(["-v"]);
+      const result = parseCliArgs(["-v"]);
       expect(result).toEqual({ steps: [], command: "version" });
     });
   });
@@ -142,9 +162,9 @@ describe("parseArgs", () => {
       expect(help).toContain("resume");
     });
 
-    test("includes flags section", () => {
+    test("includes Commander options section", () => {
       const help = formatHelp();
-      expect(help).toContain("Flags:");
+      expect(help).toContain("Options:");
       expect(help).toContain("--until");
       expect(help).toContain("--repeat");
       expect(help).toContain("--max");
@@ -162,21 +182,21 @@ describe("parseArgs", () => {
 
   describe("groups", () => {
     test("parses a group of tasks", () => {
-      const result = parseArgs(["[", "Review code", "Fix issues", "]"]);
+      const result = parseCliArgs(["[", "Review code", "Fix issues", "]"]);
       expect(result).toEqual({
         steps: [{ type: "group", tasks: ["Review code", "Fix issues"] }],
       });
     });
 
     test("parses a group with a single task", () => {
-      const result = parseArgs(["[", "Review code", "]"]);
+      const result = parseCliArgs(["[", "Review code", "]"]);
       expect(result).toEqual({
         steps: [{ type: "group", tasks: ["Review code"] }],
       });
     });
 
     test("parses task before a group", () => {
-      const result = parseArgs(["Create page", "[", "Review", "Fix", "]"]);
+      const result = parseCliArgs(["Create page", "[", "Review", "Fix", "]"]);
       expect(result).toEqual({
         steps: [
           { type: "task", task: "Create page" },
@@ -186,7 +206,7 @@ describe("parseArgs", () => {
     });
 
     test("parses task after a group", () => {
-      const result = parseArgs(["[", "Review", "Fix", "]", "Deploy"]);
+      const result = parseCliArgs(["[", "Review", "Fix", "]", "Deploy"]);
       expect(result).toEqual({
         steps: [
           { type: "group", tasks: ["Review", "Fix"] },
@@ -198,28 +218,28 @@ describe("parseArgs", () => {
 
   describe("flags on tasks", () => {
     test("--until on a task", () => {
-      const result = parseArgs(["Work on tasks", "--until", "All done"]);
+      const result = parseCliArgs(["Work on tasks", "--until", "All done"]);
       expect(result).toEqual({
         steps: [{ type: "task", task: "Work on tasks", until: "All done" }],
       });
     });
 
     test("--repeat on a task", () => {
-      const result = parseArgs(["Run tests", "--repeat", "3"]);
+      const result = parseCliArgs(["Run tests", "--repeat", "3"]);
       expect(result).toEqual({
         steps: [{ type: "task", task: "Run tests", repeat: 3 }],
       });
     });
 
     test("--until + --max on a task", () => {
-      const result = parseArgs(["Fix bugs", "--until", "No bugs left", "--max", "10"]);
+      const result = parseCliArgs(["Fix bugs", "--until", "No bugs left", "--max", "10"]);
       expect(result).toEqual({
         steps: [{ type: "task", task: "Fix bugs", until: "No bugs left", max: 10 }],
       });
     });
 
     test("--arg on a task", () => {
-      const result = parseArgs([
+      const result = parseCliArgs([
         "Review",
         "--arg",
         "permission-mode=auto",
@@ -242,7 +262,7 @@ describe("parseArgs", () => {
     });
 
     test("--max + --until order does not matter", () => {
-      const result = parseArgs(["Fix bugs", "--max", "5", "--until", "Clean"]);
+      const result = parseCliArgs(["Fix bugs", "--max", "5", "--until", "Clean"]);
       expect(result).toEqual({
         steps: [{ type: "task", task: "Fix bugs", until: "Clean", max: 5 }],
       });
@@ -251,21 +271,21 @@ describe("parseArgs", () => {
 
   describe("flags on groups", () => {
     test("--repeat on a group", () => {
-      const result = parseArgs(["[", "Review", "Fix", "]", "--repeat", "3"]);
+      const result = parseCliArgs(["[", "Review", "Fix", "]", "--repeat", "3"]);
       expect(result).toEqual({
         steps: [{ type: "group", tasks: ["Review", "Fix"], repeat: 3 }],
       });
     });
 
     test("--until on a group", () => {
-      const result = parseArgs(["[", "Review", "Fix", "]", "--until", "No issues"]);
+      const result = parseCliArgs(["[", "Review", "Fix", "]", "--until", "No issues"]);
       expect(result).toEqual({
         steps: [{ type: "group", tasks: ["Review", "Fix"], until: "No issues" }],
       });
     });
 
     test("--until + --max on a group", () => {
-      const result = parseArgs(["[", "Review", "Fix", "]", "--until", "Clean", "--max", "10"]);
+      const result = parseCliArgs(["[", "Review", "Fix", "]", "--until", "Clean", "--max", "10"]);
       expect(result).toEqual({
         steps: [
           {
@@ -279,7 +299,7 @@ describe("parseArgs", () => {
     });
 
     test("--arg on a group", () => {
-      const result = parseArgs(["[", "Review", "Fix", "]", "--arg", "permission-mode=auto"]);
+      const result = parseCliArgs(["[", "Review", "Fix", "]", "--arg", "permission-mode=auto"]);
       expect(result).toEqual({
         steps: [{ type: "group", tasks: ["Review", "Fix"], args: { "permission-mode": "auto" } }],
       });
@@ -288,7 +308,7 @@ describe("parseArgs", () => {
 
   describe("mixed sequences", () => {
     test("sequential task + grouped task with flags", () => {
-      const result = parseArgs([
+      const result = parseCliArgs([
         "Create page",
         "[",
         "Review",
@@ -319,7 +339,7 @@ describe("parseArgs", () => {
     });
 
     test("task with until followed by plain task", () => {
-      const result = parseArgs(["Fix bugs", "--until", "Clean", "Deploy"]);
+      const result = parseCliArgs(["Fix bugs", "--until", "Clean", "Deploy"]);
       expect(result).toEqual({
         steps: [
           { type: "task", task: "Fix bugs", until: "Clean" },
@@ -331,7 +351,7 @@ describe("parseArgs", () => {
 
   describe("agent options", () => {
     test("parses --agent before tasks", () => {
-      const result = parseArgs(["--agent", "pi", "Fix tests"]);
+      const result = parseCliArgs(["--agent", "pi", "Fix tests"]);
       expect(result).toEqual({
         steps: [{ type: "task", task: "Fix tests" }],
         agent: "pi",
@@ -339,7 +359,7 @@ describe("parseArgs", () => {
     });
 
     test("captures trailing passthrough args", () => {
-      const result = parseArgs(["Fix tests", "--", "--profile", "fast"]);
+      const result = parseCliArgs(["Fix tests", "--", "--profile", "fast"]);
       expect(result).toEqual({
         steps: [{ type: "task", task: "Fix tests" }],
         passthroughArgs: ["--profile", "fast"],
@@ -347,7 +367,7 @@ describe("parseArgs", () => {
     });
 
     test("captures passthrough after task flags", () => {
-      const result = parseArgs(["Fix tests", "--repeat", "2", "--", "--profile", "fast"]);
+      const result = parseCliArgs(["Fix tests", "--repeat", "2", "--", "--profile", "fast"]);
       expect(result).toEqual({
         steps: [{ type: "task", task: "Fix tests", repeat: 2 }],
         passthroughArgs: ["--profile", "fast"],
@@ -355,19 +375,19 @@ describe("parseArgs", () => {
     });
 
     test("rejects -- before tasks", () => {
-      expect(() => parseArgs(["--", "--profile", "fast"])).toThrow("No arguments provided");
+      expect(() => parseCliArgs(["--", "--profile", "fast"])).toThrow("No arguments provided");
     });
 
     test("rejects unknown agent", () => {
-      expect(() => parseArgs(["--agent", "other", "task"])).toThrow(
-        '--agent must be "claude" or "pi"',
+      expect(() => parseCliArgs(["--agent", "other", "task"])).toThrow(
+        "Allowed choices are claude, pi",
       );
     });
   });
 
   describe("recipes", () => {
     test("parses --recipe with named recipe args", () => {
-      const result = parseArgs(["--recipe", "implement", "--plan", "./PLAN.md"]);
+      const result = parseCliArgs(["--recipe", "implement", "--plan", "./PLAN.md"]);
       expect(result).toEqual({
         steps: [],
         recipe: { name: "implement", args: ["--plan", "./PLAN.md"] },
@@ -375,7 +395,7 @@ describe("parseArgs", () => {
     });
 
     test("parses -r with positional recipe args", () => {
-      const result = parseArgs(["-r", "implement", "./PLAN.md"]);
+      const result = parseCliArgs(["-r", "implement", "./PLAN.md"]);
       expect(result).toEqual({
         steps: [],
         recipe: { name: "implement", args: ["./PLAN.md"] },
@@ -383,7 +403,7 @@ describe("parseArgs", () => {
     });
 
     test("parses global agent and passthrough with recipe", () => {
-      const result = parseArgs([
+      const result = parseCliArgs([
         "--agent",
         "pi",
         "-r",
@@ -401,140 +421,149 @@ describe("parseArgs", () => {
       });
     });
 
+    test("allows a recipe named like a command", () => {
+      expect(parseCliArgs(["--recipe", "resume"])).toEqual({
+        steps: [],
+        recipe: { name: "resume", args: [] },
+      });
+    });
+
     test("rejects recipe without name", () => {
-      expect(() => parseArgs(["--recipe"])).toThrow("--recipe requires a recipe name");
-      expect(() => parseArgs(["-r"])).toThrow("-r requires a recipe name");
+      expect(() => parseCliArgs(["--recipe"])).toThrow("argument missing");
+      expect(() => parseCliArgs(["-r"])).toThrow("argument missing");
     });
   });
 
   describe("validation errors", () => {
     test("empty args throws", () => {
-      expect(() => parseArgs([])).toThrow(ParseError);
-      expect(() => parseArgs([])).toThrow("No arguments provided");
+      expect(() => parseCliArgs([])).toThrow(CliError);
+      expect(() => parseCliArgs([])).toThrow("No arguments provided");
     });
 
     test("--max without --until throws", () => {
-      expect(() => parseArgs(["task", "--max", "5"])).toThrow(ParseError);
-      expect(() => parseArgs(["task", "--max", "5"])).toThrow(
+      expect(() => parseCliArgs(["task", "--max", "5"])).toThrow(CliError);
+      expect(() => parseCliArgs(["task", "--max", "5"])).toThrow(
         "--max can only be used with --until",
       );
     });
 
     test("--repeat + --until throws", () => {
-      expect(() => parseArgs(["task", "--repeat", "3", "--until", "done"])).toThrow(ParseError);
-      expect(() => parseArgs(["task", "--repeat", "3", "--until", "done"])).toThrow(
+      expect(() => parseCliArgs(["task", "--repeat", "3", "--until", "done"])).toThrow(CliError);
+      expect(() => parseCliArgs(["task", "--repeat", "3", "--until", "done"])).toThrow(
         "--repeat and --until cannot be combined",
       );
     });
 
     test("--repeat + --max throws", () => {
-      expect(() => parseArgs(["task", "--repeat", "3", "--max", "5"])).toThrow(ParseError);
-      expect(() => parseArgs(["task", "--repeat", "3", "--max", "5"])).toThrow(
+      expect(() => parseCliArgs(["task", "--repeat", "3", "--max", "5"])).toThrow(CliError);
+      expect(() => parseCliArgs(["task", "--repeat", "3", "--max", "5"])).toThrow(
         "--repeat and --max cannot be combined",
       );
     });
 
     test("flag at start with no preceding task throws", () => {
-      expect(() => parseArgs(["--until", "done"])).toThrow(ParseError);
-      expect(() => parseArgs(["--until", "done"])).toThrow(
+      expect(() => parseCliArgs(["--until", "done"])).toThrow(CliError);
+      expect(() => parseCliArgs(["--until", "done"])).toThrow(
         'Flag "--until" has no preceding task or group',
       );
     });
 
     test("--repeat 0 throws", () => {
-      expect(() => parseArgs(["task", "--repeat", "0"])).toThrow(ParseError);
-      expect(() => parseArgs(["task", "--repeat", "0"])).toThrow(
+      expect(() => parseCliArgs(["task", "--repeat", "0"])).toThrow(CliError);
+      expect(() => parseCliArgs(["task", "--repeat", "0"])).toThrow(
         "--repeat requires a positive integer",
       );
     });
 
     test("--max 0 throws", () => {
-      expect(() => parseArgs(["task", "--max", "0", "--until", "done"])).toThrow(ParseError);
-      expect(() => parseArgs(["task", "--max", "0", "--until", "done"])).toThrow(
+      expect(() => parseCliArgs(["task", "--max", "0", "--until", "done"])).toThrow(CliError);
+      expect(() => parseCliArgs(["task", "--max", "0", "--until", "done"])).toThrow(
         "--max requires a positive integer",
       );
     });
 
     test("--repeat with negative number throws", () => {
-      expect(() => parseArgs(["task", "--repeat", "-1"])).toThrow(
+      expect(() => parseCliArgs(["task", "--repeat", "-1"])).toThrow(
         "--repeat requires a positive integer",
       );
     });
 
     test("--repeat with non-number throws", () => {
-      expect(() => parseArgs(["task", "--repeat", "abc"])).toThrow(
+      expect(() => parseCliArgs(["task", "--repeat", "abc"])).toThrow(
         '--repeat requires a positive integer, got "abc"',
       );
     });
 
     test("--max with non-number throws", () => {
-      expect(() => parseArgs(["task", "--max", "abc", "--until", "done"])).toThrow(
+      expect(() => parseCliArgs(["task", "--max", "abc", "--until", "done"])).toThrow(
         '--max requires a positive integer, got "abc"',
       );
     });
 
     test("--repeat with float throws", () => {
-      expect(() => parseArgs(["task", "--repeat", "2.5"])).toThrow(
+      expect(() => parseCliArgs(["task", "--repeat", "2.5"])).toThrow(
         '--repeat requires a positive integer, got "2.5"',
       );
     });
 
     test("--until without value throws", () => {
-      expect(() => parseArgs(["task", "--until"])).toThrow("--until requires a condition string");
+      expect(() => parseCliArgs(["task", "--until"])).toThrow("argument missing");
     });
 
     test("--repeat without value throws", () => {
-      expect(() => parseArgs(["task", "--repeat"])).toThrow("--repeat requires a positive integer");
+      expect(() => parseCliArgs(["task", "--repeat"])).toThrow("argument missing");
     });
 
     test("--max without value throws", () => {
-      expect(() => parseArgs(["task", "--max"])).toThrow("--max requires a positive integer");
+      expect(() => parseCliArgs(["task", "--max"])).toThrow("argument missing");
     });
 
     test("--arg without value throws", () => {
-      expect(() => parseArgs(["task", "--arg"])).toThrow("--arg requires a flag");
+      expect(() => parseCliArgs(["task", "--arg"])).toThrow("argument missing");
     });
 
     test("--arg rejects leading dashes", () => {
-      expect(() => parseArgs(["task", "--arg", "--permission-mode=auto"])).toThrow(
+      expect(() => parseCliArgs(["task", "--arg", "--permission-mode=auto"])).toThrow(
         "without leading dashes",
       );
     });
 
     test("--arg rejects empty values", () => {
-      expect(() => parseArgs(["task", "--arg", "permission-mode="])).toThrow("cannot be empty");
+      expect(() => parseCliArgs(["task", "--arg", "permission-mode="])).toThrow("cannot be empty");
     });
 
     test("nested brackets throw", () => {
-      expect(() => parseArgs(["[", "a", "[", "b", "]", "]"])).toThrow(
+      expect(() => parseCliArgs(["[", "a", "[", "b", "]", "]"])).toThrow(
         "Nested brackets are not supported",
       );
     });
 
     test("unclosed bracket throws", () => {
-      expect(() => parseArgs(["[", "a", "b"])).toThrow("Unclosed bracket");
+      expect(() => parseCliArgs(["[", "a", "b"])).toThrow("Unclosed bracket");
     });
 
     test("closing bracket without opening throws", () => {
-      expect(() => parseArgs(["a", "]"])).toThrow('Unexpected "]" without a matching opening "["');
+      expect(() => parseCliArgs(["a", "]"])).toThrow(
+        'Unexpected "]" without a matching opening "["',
+      );
     });
 
     test("empty group throws", () => {
-      expect(() => parseArgs(["[", "]"])).toThrow("Empty group");
+      expect(() => parseCliArgs(["[", "]"])).toThrow("Empty group");
     });
 
     test("unknown flag throws", () => {
-      expect(() => parseArgs(["task", "--verbose"])).toThrow('Unknown flag "--verbose"');
+      expect(() => parseCliArgs(["task", "--verbose"])).toThrow('Unknown flag "--verbose"');
     });
 
     test("flag inside group throws", () => {
-      expect(() => parseArgs(["[", "a", "--until", "done", "]"])).toThrow(
+      expect(() => parseCliArgs(["[", "a", "--until", "done", "]"])).toThrow(
         'Flag "--until" inside a group is not allowed',
       );
     });
 
     test("--max without --until on a group throws", () => {
-      expect(() => parseArgs(["[", "a", "b", "]", "--max", "5"])).toThrow(
+      expect(() => parseCliArgs(["[", "a", "b", "]", "--max", "5"])).toThrow(
         "--max can only be used with --until",
       );
     });

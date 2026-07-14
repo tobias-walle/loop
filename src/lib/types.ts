@@ -21,7 +21,7 @@ export type Step =
 
 export type InitScope = "user" | "project";
 
-/** Configuration derived from CLI parsing. */
+/** Configuration derived from the CLI command. */
 export type LoopConfig = {
   steps: Step[];
   command?: "init" | "init-recipe" | "resume" | "help" | "version";
@@ -33,6 +33,7 @@ export type LoopConfig = {
   initRecipeName?: string;
   initScope?: InitScope;
   includeTemplate?: boolean;
+  helpText?: string;
   passthroughArgs?: string[];
 };
 

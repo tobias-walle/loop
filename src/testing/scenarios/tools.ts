@@ -167,26 +167,27 @@ export const NESTED_SUBAGENT: Scenario = {
           tool: "Agent",
           input: {
             description:
-              "Review src/lib/parser.ts for correctness, edge cases, and code style issues",
-            prompt: "Review the parser module for correctness, edge cases, and code style issues",
+              "Review src/lib/cli-command.ts for correctness, edge cases, and code style issues",
+            prompt:
+              "Review the CLI command module for correctness, edge cases, and code style issues",
           },
           result:
             "Review complete. Found 1 issue: the error message in line 42 is missing the actual invalid token. Everything else looks good.",
           subagentDurationMs: 8500,
           subagent: [
             {
-              text: "I'll review the parser module.",
+              text: "I'll review the CLI command module.",
               toolCalls: [
                 {
                   tool: "Read",
-                  input: { file_path: "src/lib/parser.ts" },
+                  input: { file_path: "src/lib/cli-command.ts" },
                   result:
                     'export function parse(args: string[]): Step[] {\n  // ... parser implementation\n  if (!isValid(token)) {\n    throw new Error("Invalid token");\n  }\n}',
                 },
               ],
             },
             {
-              text: "The parser looks well-structured. I found one issue: the error message on line 42 doesn't include the invalid token value, which makes debugging harder. Everything else follows good patterns.",
+              text: "The CLI command looks well-structured. I found one issue: the error message on line 42 doesn't include the invalid token value, which makes debugging harder. Everything else follows good patterns.",
             },
           ],
         },
@@ -198,11 +199,11 @@ export const NESTED_SUBAGENT: Scenario = {
         {
           tool: "Edit",
           input: {
-            file_path: "src/lib/parser.ts",
+            file_path: "src/lib/cli-command.ts",
             old_string: '    throw new Error("Invalid token");',
             new_string: '    throw new Error(`Invalid token: "${token}"`);',
           },
-          result: "Successfully edited src/lib/parser.ts",
+          result: "Successfully edited src/lib/cli-command.ts",
         },
       ],
     },

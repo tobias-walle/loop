@@ -12,17 +12,17 @@ export const RALPH_LOOP_TWO_ITERS: Scenario[] = [
             tool: "Bash",
             input: { command: "bun test 2>&1" },
             result:
-              "bun test v1.3.0\n\n src/lib/parser.spec.ts:\n   PASS: parses single task\n   PASS: parses sequential tasks\n   FAIL: validates --max without --until\n   FAIL: handles empty input\n\n 2 pass, 2 fail",
+              "bun test v1.3.0\n\n src/lib/cli-command.spec.ts:\n   PASS: parses single task\n   PASS: parses sequential tasks\n   FAIL: validates --max without --until\n   FAIL: handles empty input\n\n 2 pass, 2 fail",
           },
           {
             tool: "Edit",
             input: {
-              file_path: "src/lib/parser.ts",
+              file_path: "src/lib/cli-command.ts",
               old_string: "if (flags.max && !flags.until) return;",
               new_string:
                 'if (flags.max && !flags.until) throw new Error("--max requires --until");',
             },
-            result: "Successfully edited src/lib/parser.ts",
+            result: "Successfully edited src/lib/cli-command.ts",
           },
         ],
       },
@@ -42,18 +42,18 @@ export const RALPH_LOOP_TWO_ITERS: Scenario[] = [
           {
             tool: "Edit",
             input: {
-              file_path: "src/lib/parser.ts",
+              file_path: "src/lib/cli-command.ts",
               old_string: "export function parse(args: string[]): Step[] {",
               new_string:
                 "export function parse(args: string[]): Step[] {\n  if (args.length === 0) return [];",
             },
-            result: "Successfully edited src/lib/parser.ts",
+            result: "Successfully edited src/lib/cli-command.ts",
           },
           {
             tool: "Bash",
             input: { command: "bun test 2>&1" },
             result:
-              "bun test v1.3.0\n\n src/lib/parser.spec.ts:\n   PASS: parses single task\n   PASS: parses sequential tasks\n   PASS: validates --max without --until\n   PASS: handles empty input\n\n 4 pass, 0 fail",
+              "bun test v1.3.0\n\n src/lib/cli-command.spec.ts:\n   PASS: parses single task\n   PASS: parses sequential tasks\n   PASS: validates --max without --until\n   PASS: handles empty input\n\n 4 pass, 0 fail",
           },
         ],
       },

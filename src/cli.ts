@@ -3,14 +3,14 @@
 import { handlePreTuiCommand } from "./commands/pre-command.js";
 import { resumeCommand } from "./commands/resume-command.js";
 import { runCommand } from "./commands/run-command.js";
-import { ParseError, parseArgs } from "./lib/parser.js";
+import { CliError, parseCliArgs } from "./lib/cli-command.js";
 
 async function main(): Promise<number> {
-  let config: ReturnType<typeof parseArgs>;
+  let config: ReturnType<typeof parseCliArgs>;
   try {
-    config = parseArgs(process.argv.slice(2));
+    config = parseCliArgs(process.argv.slice(2));
   } catch (error) {
-    if (error instanceof ParseError) {
+    if (error instanceof CliError) {
       console.error(`Error: ${error.message}`);
       return 1;
     }

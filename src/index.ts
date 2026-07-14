@@ -31,7 +31,7 @@ export type {
   LoopConfigFile,
   LoopRuntimeConfig,
 } from "./lib/config/index.js";
-export { ParseError, formatHelp, parseArgs } from "./lib/parser.js";
+export { CliError, createCliCommand, formatHelp, parseCliArgs } from "./lib/cli-command.js";
 export {
   RECIPE_EXTENSION,
   RecipeError,
