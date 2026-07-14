@@ -19,6 +19,8 @@ export type Step =
       args?: AgentArgs;
     };
 
+export type InitScope = "user" | "project";
+
 /** Configuration derived from CLI parsing. */
 export type LoopConfig = {
   steps: Step[];
@@ -29,6 +31,8 @@ export type LoopConfig = {
     args: string[];
   };
   initRecipeName?: string;
+  initScope?: InitScope;
+  includeTemplate?: boolean;
   passthroughArgs?: string[];
 };
 

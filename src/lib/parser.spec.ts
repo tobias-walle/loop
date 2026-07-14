@@ -40,25 +40,63 @@ describe("parseArgs", () => {
   });
 
   describe("init subcommands", () => {
-    test("parses init command", () => {
-      const result = parseArgs(["init"]);
-      expect(result).toEqual({
+    test("defaults init to user scope", () => {
+      expect(parseArgs(["init"])).toEqual({
         steps: [],
         command: "init",
+        initScope: "user",
       });
     });
 
-    test("parses init-recipe command", () => {
-      const result = parseArgs(["init-recipe", "implement"]);
-      expect(result).toEqual({
+    test("parses project init with a template", () => {
+      expect(parseArgs(["init", "--project", "--include-template"])).toEqual({
+        steps: [],
+        command: "init",
+        initScope: "project",
+        includeTemplate: true,
+      });
+    });
+
+    test("defaults init-recipe to user scope", () => {
+      expect(parseArgs(["init-recipe", "implement"])).toEqual({
         steps: [],
         command: "init-recipe",
         initRecipeName: "implement",
+        initScope: "user",
       });
     });
 
-    test("rejects init-recipe without name", () => {
+    test("parses init-recipe scope before or after its name", () => {
+      expect(parseArgs(["init-recipe", "--project", "implement"])).toMatchObject({
+        initRecipeName: "implement",
+        initScope: "project",
+      });
+      expect(parseArgs(["init-recipe", "implement", "--project"])).toMatchObject({
+        initRecipeName: "implement",
+        initScope: "project",
+      });
+    });
+
+    test("rejects conflicting init scopes", () => {
+      expect(() => parseArgs(["init", "--user", "--project"])).toThrow(
+        "--user and --project cannot be combined",
+      );
+      expect(() => parseArgs(["init-recipe", "implement", "--project", "--user"])).toThrow(
+        "--user and --project cannot be combined",
+      );
+    });
+
+    test("rejects user templates", () => {
+      expect(() => parseArgs(["init", "--include-template"])).toThrow(
+        "--include-template requires --project",
+      );
+    });
+
+    test("rejects init-recipe without exactly one name", () => {
       expect(() => parseArgs(["init-recipe"])).toThrow("init-recipe requires a name");
+      expect(() => parseArgs(["init-recipe", "one", "two"])).toThrow(
+        "init-recipe accepts exactly one name",
+      );
     });
   });
 

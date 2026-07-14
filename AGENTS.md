@@ -30,6 +30,12 @@ Key design principle: The runner and TUI never import agent-specific code. Every
 
 Architecture decisions are documented in `docs/adr/`.
 
+## CLI Output
+
+- Make command output colorful and easy to scan.
+- Reuse helpers from `src/lib/ansi.ts`. Never add raw ANSI escape sequences elsewhere.
+- Use consistent semantic colors, such as green for success, yellow for skipped or warning states, cyan for paths, and dim text for secondary details.
+
 ## Persistence
 
 - Define storage names and path composition only in `src/lib/storage-paths.ts`.
@@ -58,8 +64,11 @@ loop "Improve coverage" --until "Coverage above 80%" --max 5
 # Repeat a group of tasks
 loop [ "Write code" "Review" ] --repeat 3
 
-# Create a .loop/LOOP.md project template
+# Create personal config and an example recipe
 loop init
+
+# Create a project scaffold with a LOOP.md template
+loop init --project --include-template
 ```
 
 ### Claude Adapter Modes

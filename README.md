@@ -43,7 +43,10 @@ loop "Review safely" --arg permission-mode=auto "Fix with bypass" --arg permissi
 # Inspect and continue unfinished sessions
 loop resume
 
-# Create a recipe template
+# Create personal config and an example recipe
+loop init
+
+# Create a personal recipe template
 loop init-recipe implement
 
 # Run a named recipe
@@ -67,10 +70,11 @@ loop "Create an about page" [ "Review code" "Fix issues" ] --until "No issues" -
 
 Recipes are reusable YAML templates for steps. Project recipes live in `.loop/recipes/<name>.yaml`. Personal recipes live in the user config directory under `recipes/<name>.yaml`. Project recipes take precedence.
 
-Create a starter recipe:
+Create a personal starter recipe, or add one to the current project:
 
 ```bash
 loop init-recipe implement
+loop init-recipe implement --project
 ```
 
 Recipe files are validated with a Zod schema before they run.
@@ -117,6 +121,8 @@ Flags bind to the immediately preceding task or `]`.
 | `--arg flag[=value]` | Pass an agent flag to the current task or group |
 | `--agent claude|pi` | Select the agent backend for this run |
 | `--recipe NAME`, `-r NAME` | Run a named recipe |
+| `--user`, `--project` | Select the scope for `init` or `init-recipe` (default: user) |
+| `--include-template` | Add `LOOP.md` during project init |
 | `--` | Pass remaining raw args to the selected agent |
 
 ### Configuration
@@ -155,9 +161,17 @@ Claude defaults to `permission-mode = "auto"`. To use permission bypass behavior
 loop "Fix tests" --arg permission-mode=bypassPermissions
 ```
 
-### Project template
+### Initialization
 
-Run `loop init` to generate `.loop/LOOP.md`. This file controls how the agent is prompted inside loops. It uses `{{placeholder}}` and `{{#if var}}...{{/if}}` syntax. Commit it to your repo and customize it per project.
+`loop init` creates a commented config and an example recipe in your personal config directory. Use `loop init --project` to create them under `.loop/` in the current project. Existing files are never overwritten.
+
+The project template is opt-in:
+
+```bash
+loop init --project --include-template
+```
+
+`.loop/LOOP.md` controls how the agent is prompted inside loops. It uses `{{placeholder}}` and `{{#if var}}...{{/if}}` syntax. Commit it to your repo and customize it per project.
 
 ## Files and storage
 

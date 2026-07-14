@@ -1,79 +1,13 @@
-import type { LoopConfig, Step } from "./types";
+import { formatHelp } from "./cli-help.js";
+import type { InitScope, LoopConfig, Step } from "./types";
+
+export { formatHelp } from "./cli-help.js";
 
 export class ParseError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ParseError";
   }
-}
-
-const COMMANDS = {
-  resume: "Inspect and continue an unfinished session",
-  init: "Create a .loop/LOOP.md project template",
-  "init-recipe <name>": "Create a YAML recipe template in .loop/recipes",
-} as const;
-
-const FLAGS = {
-  "--until <condition>": "Loop until the agent signals the condition is met",
-  "--repeat <n>": "Repeat the task exactly n times",
-  "--max <n>": "Safety cap for --until loops (max iterations)",
-  "--arg <flag[=value]>": "Pass an agent flag for this task or group",
-  "--agent <claude|pi>": "Agent backend to use",
-  "--recipe <name>, -r <name>": "Run a named YAML recipe from .loop/recipes or user recipes",
-  "--": "Pass remaining raw args to the selected agent",
-  "--help, -h": "Show this help message",
-  "--version, -v": "Show version number",
-} as const;
-
-const EXAMPLES = [
-  ['loop "Fix all TypeScript errors"', "Run a single task"],
-  ['loop "Write tests" "Review code"', "Run tasks sequentially"],
-  ['loop "Fix lint errors" --repeat 3', "Repeat a task 3 times"],
-  ['loop "Improve coverage" --until "Coverage above 80%" --max 5', "Loop with a condition and cap"],
-  ['loop "Review" --arg permission-mode=auto', "Pass an agent flag to one step"],
-  [
-    'loop "Fix" --arg permission-mode=bypassPermissions',
-    "Override Claude permission mode for one step",
-  ],
-  ['loop --agent pi "Fix tests" -- --profile fast', "Use pi and pass raw args to it"],
-  ['loop [ "Write code" "Review" ] --repeat 3', "Repeat a group of tasks"],
-  ["loop --recipe implement --plan ./PLAN.md", "Run a named recipe with a named argument"],
-  ["loop -r implement ./PLAN.md", "Run a named recipe with a positional argument"],
-  ["loop resume", "Inspect and continue an unfinished session"],
-  ["loop init-recipe implement", "Create a YAML recipe template"],
-  ["loop init", "Create a .loop/LOOP.md project template"],
-] as const;
-
-export function formatHelp(): string {
-  const lines: string[] = [
-    "Usage: loop <tasks...> [flags] | loop resume | loop --recipe <name> [recipe-args...] | loop init-recipe <name>",
-    "",
-    "Run AI agent tasks in sequence, loops, or groups.",
-    "",
-    "Commands:",
-  ];
-
-  for (const [cmd, desc] of Object.entries(COMMANDS)) {
-    lines.push(`  ${cmd.padEnd(24)} ${desc}`);
-  }
-
-  lines.push("", "Flags:");
-  for (const [flag, desc] of Object.entries(FLAGS)) {
-    lines.push(`  ${flag.padEnd(24)} ${desc}`);
-  }
-
-  lines.push("", "Groups:");
-  lines.push('  [ "task1" "task2" ]     Run multiple tasks as a single step');
-  lines.push("                         Flags apply to the whole group when placed after ]");
-
-  lines.push("", "Examples:");
-  for (const [cmd, desc] of EXAMPLES) {
-    lines.push(`  ${cmd}`);
-    lines.push(`      ${desc}`);
-    lines.push("");
-  }
-
-  return lines.join("\n");
 }
 
 export function parseArgs(args: string[]): LoopConfig {
@@ -131,20 +65,28 @@ export function parseArgs(args: string[]): LoopConfig {
 
   // Handle subcommands
   if (loopArgs[i] === "init") {
-    return withGlobalOptions({ steps: [], command: "init" }, agent, passthroughArgs);
+    const options = parseInitOptions(loopArgs.slice(i + 1), "init");
+    return withGlobalOptions(
+      {
+        steps: [],
+        command: "init",
+        initScope: options.scope,
+        ...(options.includeTemplate ? { includeTemplate: true } : {}),
+      },
+      agent,
+      passthroughArgs,
+    );
   }
 
   if (loopArgs[i] === "init-recipe") {
-    if (i + 1 >= loopArgs.length || loopArgs[i + 1].startsWith("-")) {
-      throw new ParseError("init-recipe requires a name. Usage: loop init-recipe <name>");
-    }
-    if (i + 2 < loopArgs.length) {
-      throw new ParseError(
-        `init-recipe accepts exactly one name, got extra argument "${loopArgs[i + 2]}".`,
-      );
-    }
+    const options = parseInitOptions(loopArgs.slice(i + 1), "init-recipe");
     return withGlobalOptions(
-      { steps: [], command: "init-recipe", initRecipeName: loopArgs[i + 1] },
+      {
+        steps: [],
+        command: "init-recipe",
+        initRecipeName: options.name,
+        initScope: options.scope,
+      },
       agent,
       passthroughArgs,
     );
@@ -203,6 +145,47 @@ export function parseArgs(args: string[]): LoopConfig {
   }
 
   return withGlobalOptions({ steps }, agent, passthroughArgs);
+}
+
+function parseInitOptions(
+  args: string[],
+  command: "init" | "init-recipe",
+): { scope: InitScope; includeTemplate: boolean; name?: string } {
+  let explicitScope: InitScope | undefined;
+  let includeTemplate = false;
+  const names: string[] = [];
+
+  for (const arg of args) {
+    if (arg === "--user" || arg === "--project") {
+      const scope = arg === "--user" ? "user" : "project";
+      if (explicitScope && explicitScope !== scope) {
+        throw new ParseError("--user and --project cannot be combined.");
+      }
+      explicitScope = scope;
+    } else if (arg === "--include-template" && command === "init") {
+      includeTemplate = true;
+    } else if (arg.startsWith("-")) {
+      throw new ParseError(`Unknown ${command} option "${arg}".`);
+    } else {
+      names.push(arg);
+    }
+  }
+
+  const scope = explicitScope ?? "user";
+  if (includeTemplate && scope !== "project") {
+    throw new ParseError("--include-template requires --project.");
+  }
+  if (command === "init" && names.length > 0) {
+    throw new ParseError(`init accepts no positional arguments, got "${names[0]}".`);
+  }
+  if (command === "init-recipe" && names.length === 0) {
+    throw new ParseError("init-recipe requires a name. Usage: loop init-recipe <name>");
+  }
+  if (command === "init-recipe" && names.length > 1) {
+    throw new ParseError(`init-recipe accepts exactly one name, got extra argument "${names[1]}".`);
+  }
+
+  return { scope, includeTemplate, name: names[0] };
 }
 
 function withGlobalOptions(
