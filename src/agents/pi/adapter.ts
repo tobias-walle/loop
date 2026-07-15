@@ -1,15 +1,15 @@
-import { type ChildProcess, spawn } from "node:child_process";
 import { type AgentArgs, mergeAgentArgs, renderAgentArgs } from "../../lib/agent-args.js";
 import { type Logger, noopLogger } from "../../lib/logging.js";
-import {
-  type ChildProcessController,
-  captureChildStderr,
-  childProcessFailure,
-  createChildProcessController,
-} from "../child-process.js";
 import type { AgentAdapter, AgentEvent, AgentSession, AgentSpawnOptions } from "../types.js";
+import {
+  type ChildProcessHandle,
+  childProcessFailure,
+  spawnChildProcess,
+} from "../utils/child-process.js";
 import { completePendingDone, createPiEventState, mapPiEvent } from "./events.js";
 import { readJsonLines } from "./json.js";
+
+const PROCESS_NAME = "pi JSON process";
 
 export interface PiAdapterOptions {
   command?: string;
@@ -58,112 +58,79 @@ export function createPiAdapter(options: PiAdapterOptions = {}): AgentAdapter {
         "json",
         prompt,
       ];
-      logger.debug("Spawning pi JSON process", { command, cwd: opts?.cwd, argCount: args.length });
-
       const startedAt = Date.now();
-      const proc: ChildProcess = spawn(command, args, {
-        stdio: ["ignore", "pipe", "pipe"],
+      logger.debug("Spawning pi JSON process", {
+        command,
         cwd: opts?.cwd,
-        env: { ...process.env, ...configuredEnv, ...(opts?.env ?? {}) },
+        argCount: args.length,
       });
-      const pid = proc.pid;
-      if (pid == null) logger.warn("pi JSON process spawned without PID");
-      else logger.info("pi JSON process spawned", { pid });
-
-      const getStderr = captureChildStderr(proc.stderr, (line) => {
-        logger.warn("pi stderr", { pid, line });
+      const child = spawnChildProcess(command, args, {
+        cwd: opts?.cwd,
+        env: { ...configuredEnv, ...(opts?.env ?? {}) },
       });
-      proc.on("error", (err) => logger.error("pi JSON process error", { pid, error: err.message }));
-
-      const controller = createChildProcessController(proc, {
-        onExit: (code, signal) => {
-          logger.info("pi JSON process exited", { pid, code, signal });
-        },
-        onForceKill: () => logger.warn("Force killing unresponsive pi JSON process", { pid }),
-      });
-      const terminate = () => controller.terminate();
+      logLifecycle(child, logger);
 
       return {
-        events: proc.stdout
-          ? wrapPiEvents(proc.stdout, proc, controller, getStderr, logger, pid, startedAt)
-          : noStdout(terminate),
-        exited: controller.exited,
+        events: streamPiSession(streamPiEvents(child.stdout, startedAt), child, logger),
+        exited: child.result.then(() => undefined),
         abort(): void {
-          const signal = terminate();
-          logger.warn("Aborting pi JSON process", { pid, signal });
+          logger.warn("Aborting pi JSON process", { pid: child.pid });
+          child.abort();
         },
       };
     },
   };
 }
 
-async function* wrapPiEvents(
-  stdout: NodeJS.ReadableStream,
-  proc: ChildProcess,
-  controller: ChildProcessController,
-  getStderr: () => string,
-  logger: Logger,
-  pid: number | undefined,
+async function* streamPiEvents(
+  stdout: import("node:stream").Readable,
   startedAt: number,
 ): AsyncGenerator<AgentEvent> {
   const state = createPiEventState();
   try {
-    for await (const raw of readJsonLines(stdout as import("node:stream").Readable)) {
-      const events = mapPiEvent(raw, state);
-      for (const mappedEvent of events) {
-        const event = withMeasuredDuration(mappedEvent, startedAt);
-        if (event.type === "error") {
-          logger.debug("Terminating pi JSON process after error event", { pid });
-          controller.terminate();
-          yield event;
-          return;
-        }
-        if (event.type === "done") {
-          yield await validatePiCompletion(event, controller, getStderr, logger, pid);
-          return;
-        }
-        yield event;
-      }
+    for await (const raw of readJsonLines(stdout)) {
+      for (const event of mapPiEvent(raw, state)) yield withMeasuredDuration(event, startedAt);
     }
-  } catch (err) {
-    controller.terminate();
-    yield { type: "error", message: err instanceof Error ? err.message : String(err) };
+  } catch (error) {
+    yield { type: "error", message: error instanceof Error ? error.message : String(error) };
     return;
   }
-
-  if (state.pendingDone) {
-    const done = withMeasuredDuration(completePendingDone(state), startedAt);
-    yield await validatePiCompletion(done, controller, getStderr, logger, pid);
-    return;
-  }
-
-  const outcome = controller.getOutcome();
-  const failure = outcome
-    ? childProcessFailure("pi JSON process", outcome, getStderr())
-    : undefined;
-  const exitCode = outcome?.code ?? proc.exitCode;
-  const message =
-    failure ??
-    (exitCode != null
-      ? `pi JSON process exited unexpectedly (code ${exitCode})`
-      : "pi JSON stream ended without completion");
-  logger.warn(message, { pid, exitCode });
-  controller.terminate();
-  yield { type: "error", message };
+  if (state.pendingDone) yield withMeasuredDuration(completePendingDone(state), startedAt);
 }
 
-async function validatePiCompletion(
-  done: Extract<AgentEvent, { type: "done" }>,
-  controller: ChildProcessController,
-  getStderr: () => string,
+async function* streamPiSession(
+  source: AsyncIterable<AgentEvent>,
+  child: ChildProcessHandle,
   logger: Logger,
-  pid: number | undefined,
-): Promise<AgentEvent> {
-  const outcome = await controller.outcome;
-  const failure = childProcessFailure("pi JSON process", outcome, getStderr());
-  if (!failure) return done;
-  logger.warn(failure, { pid, code: outcome.code, signal: outcome.signal });
-  return { type: "error", message: failure };
+): AsyncGenerator<AgentEvent> {
+  for await (const event of source) {
+    if (event.type === "error") {
+      child.abort();
+      yield event;
+      return;
+    }
+    if (event.type === "done") {
+      const result = await child.result;
+      const failure = childProcessFailure(PROCESS_NAME, result);
+      if (failure) {
+        logger.warn(failure, { pid: child.pid, code: result.exitCode, signal: result.signal });
+        yield { type: "error", message: failure };
+      } else yield event;
+      return;
+    }
+    yield event;
+  }
+
+  const wasRunning = child.isRunning();
+  if (wasRunning) child.abort();
+  const result = await child.result;
+  const failure =
+    result.error || result.exitCode !== 0 || !wasRunning
+      ? childProcessFailure(PROCESS_NAME, result)
+      : undefined;
+  const message = failure ?? "pi JSON stream ended without completion";
+  logger.warn(message, { pid: child.pid, exitCode: result.exitCode });
+  yield { type: "error", message };
 }
 
 function withMeasuredDuration(
@@ -176,7 +143,14 @@ function withMeasuredDuration(event: AgentEvent, startedAt: number): AgentEvent 
   return { ...event, durationMs: Math.max(1, Date.now() - startedAt) };
 }
 
-async function* noStdout(terminate: () => NodeJS.Signals): AsyncGenerator<AgentEvent> {
-  terminate();
-  yield { type: "error", message: "pi JSON process has no stdout stream" };
+function logLifecycle(child: ChildProcessHandle, logger: Logger): void {
+  if (child.pid == null) logger.warn("pi JSON process spawned without PID");
+  else logger.info("pi JSON process spawned", { pid: child.pid });
+  void child.result.then((result) => {
+    logger.info("pi JSON process exited", {
+      pid: child.pid,
+      code: result.exitCode,
+      signal: result.signal,
+    });
+  });
 }

@@ -1,94 +1,10 @@
 import type { Readable } from "node:stream";
 import type { AgentEvent } from "../types.js";
+import { readLines } from "../utils/lines.js";
 import { parseClaudeLine } from "./parsers.js";
 import type { BlockState } from "./types.js";
 
-/**
- * Async iterator that reads from a Node.js readable stream and yields
- * individual lines (splitting on newline boundaries). Handles buffering
- * across chunk boundaries and drains remaining data on stream end.
- */
-export async function* readLines(stream: Readable): AsyncGenerator<string> {
-  let buffer = "";
-  let streamEnded = false;
-
-  const lines: string[] = [];
-  let resolve: (() => void) | null = null;
-
-  const flush = () => {
-    let idx = buffer.indexOf("\n");
-    while (idx !== -1) {
-      lines.push(buffer.slice(0, idx));
-      buffer = buffer.slice(idx + 1);
-      idx = buffer.indexOf("\n");
-    }
-  };
-
-  const onData = (chunk: Buffer) => {
-    buffer += chunk.toString();
-    flush();
-    if (lines.length > 0 && resolve) {
-      resolve();
-      resolve = null;
-    }
-  };
-
-  const onEnd = () => {
-    streamEnded = true;
-    if (resolve) {
-      resolve();
-      resolve = null;
-    }
-  };
-
-  const onError = () => {
-    streamEnded = true;
-    if (resolve) {
-      resolve();
-      resolve = null;
-    }
-  };
-
-  // Also handle 'close' — destroy() emits 'close' but not 'end',
-  // so we need this to unblock when the process force-closes stdout.
-  const onClose = () => {
-    if (!streamEnded) onEnd();
-  };
-
-  stream.on("data", onData);
-  stream.on("end", onEnd);
-  stream.on("error", onError);
-  stream.on("close", onClose);
-
-  try {
-    while (true) {
-      if (lines.length > 0) {
-        yield lines.shift() as string;
-        continue;
-      }
-
-      if (streamEnded) {
-        // Drain remaining buffer as a final line
-        if (buffer.length > 0) {
-          const remaining = buffer;
-          buffer = "";
-          yield remaining;
-        }
-        return;
-      }
-
-      // Wait for more data or stream end
-      await new Promise<void>((r) => {
-        resolve = r;
-      });
-    }
-  } finally {
-    stream.off("data", onData);
-    stream.off("end", onEnd);
-    stream.off("error", onError);
-    stream.off("close", onClose);
-  }
-}
+export { readLines };
 
 /**
  * Async generator that reads NDJSON lines from a process stdout and

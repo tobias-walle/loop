@@ -1,16 +1,15 @@
-import { type ChildProcess, spawn } from "node:child_process";
 import { type AgentArgs, mergeAgentArgs, renderAgentArgs } from "../../lib/agent-args.js";
 import { type Logger, noopLogger } from "../../lib/logging.js";
+import type { AgentAdapter, AgentEvent, AgentSession, AgentSpawnOptions } from "../types.js";
 import {
-  type ChildProcessController,
-  captureChildStderr,
+  type ChildProcessHandle,
   childProcessFailure,
-  createChildProcessController,
-} from "../child-process.js";
-import type { AgentAdapter, AgentSession, AgentSpawnOptions } from "../types.js";
+  spawnChildProcess,
+} from "../utils/child-process.js";
 import { streamEvents } from "./stream.js";
 
 const DEFAULT_CLAUDE_ARGS: AgentArgs = { "permission-mode": "auto" };
+const PROCESS_NAME = "Claude process";
 
 export interface ClaudeAdapterOptions {
   command?: string;
@@ -30,9 +29,7 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
   if (options?.model) {
     logger.warn(
       "Claude model config is currently ignored until Claude CLI model support is verified",
-      {
-        model: options.model,
-      },
+      { model: options.model },
     );
   }
 
@@ -48,77 +45,41 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
         ...configuredRawArgs,
         prompt,
       ];
-
-      logger.debug("Spawning claude process", {
+      logger.debug("Spawning Claude process", { command, cwd: opts?.cwd, argCount: args.length });
+      const child = spawnChildProcess(command, args, {
         cwd: opts?.cwd,
-        argCount: args.length,
-        command,
+        env: { ...configuredEnv, ...(opts?.env ?? {}) },
       });
-
-      const proc: ChildProcess = spawn(command, args, {
-        stdio: ["ignore", "pipe", "pipe"],
-        cwd: opts?.cwd,
-        env: { ...process.env, ...configuredEnv, ...(opts?.env ?? {}) },
-      });
-
-      const pid = proc.pid;
-      if (pid == null) {
-        logger.warn("Claude process spawned without PID (spawn may have failed)");
-      } else {
-        logger.info("Claude process spawned", { pid });
-      }
-
-      proc.on("error", (err) => {
-        logger.error("Claude process error", { pid, error: err.message });
-      });
-
-      const getStderr = captureChildStderr(proc.stderr, (line) => {
-        logger.warn("Claude stderr", { pid, line });
-      });
-
-      const controller = createChildProcessController(proc, {
-        onExit: (code, signal) => {
-          logger.info("Claude process exited", { pid, code, signal });
-        },
-        onForceKill: () => logger.warn("Force killing unresponsive Claude process", { pid }),
-      });
-      const terminate = () => controller.terminate();
-      const events = proc.stdout
-        ? wrapProcessEvents(streamEvents(proc.stdout), proc, controller, getStderr, logger, pid)
-        : emptyEvents(terminate);
+      logLifecycle(child, logger);
 
       return {
-        events,
-        exited: controller.exited,
+        events: streamClaudeSession(streamEvents(child.stdout), child, logger),
+        exited: child.result.then(() => undefined),
         abort(): void {
-          const signal = terminate();
-          logger.warn("Aborting claude process", { pid, signal });
+          logger.warn("Aborting Claude process", { pid: child.pid });
+          child.abort();
         },
       };
     },
   };
 }
 
-async function* wrapProcessEvents(
-  source: AsyncGenerator<import("../types.js").AgentEvent>,
-  proc: ChildProcess,
-  controller: ChildProcessController,
-  getStderr: () => string,
+async function* streamClaudeSession(
+  source: AsyncIterable<AgentEvent>,
+  child: ChildProcessHandle,
   logger: Logger,
-  pid: number | undefined,
-): AsyncGenerator<import("../types.js").AgentEvent> {
+): AsyncGenerator<AgentEvent> {
   for await (const event of source) {
     if (event.type === "error") {
-      logger.debug("Terminating claude process after error event", { pid });
-      controller.terminate();
+      child.abort();
       yield event;
       return;
     }
     if (event.type === "done") {
-      const outcome = await controller.outcome;
-      const failure = childProcessFailure("Claude process", outcome, getStderr());
+      const result = await child.result;
+      const failure = childProcessFailure(PROCESS_NAME, result);
       if (failure) {
-        logger.warn(failure, { pid, code: outcome.code, signal: outcome.signal });
+        logger.warn(failure, { pid: child.pid, code: result.exitCode, signal: result.signal });
         yield { type: "error", message: failure };
       } else yield event;
       return;
@@ -126,22 +87,26 @@ async function* wrapProcessEvents(
     yield event;
   }
 
-  const outcome = controller.getOutcome();
-  const failure = outcome ? childProcessFailure("Claude process", outcome, getStderr()) : undefined;
-  const exitCode = outcome?.code ?? proc.exitCode;
-  const message =
-    failure ??
-    (exitCode != null
-      ? `Claude process exited unexpectedly (code ${exitCode})`
-      : "Claude event stream ended without completion");
-  logger.warn(message, { pid, exitCode });
-  controller.terminate();
+  const wasRunning = child.isRunning();
+  if (wasRunning) child.abort();
+  const result = await child.result;
+  const failure =
+    result.error || result.exitCode !== 0 || !wasRunning
+      ? childProcessFailure(PROCESS_NAME, result)
+      : undefined;
+  const message = failure ?? "Claude event stream ended without completion";
+  logger.warn(message, { pid: child.pid, exitCode: result.exitCode });
   yield { type: "error", message };
 }
 
-async function* emptyEvents(
-  terminate: () => NodeJS.Signals,
-): AsyncGenerator<import("../types.js").AgentEvent> {
-  terminate();
-  yield { type: "error", message: "Claude process has no stdout stream" };
+function logLifecycle(child: ChildProcessHandle, logger: Logger): void {
+  if (child.pid == null) logger.warn("Claude process spawned without PID");
+  else logger.info("Claude process spawned", { pid: child.pid });
+  void child.result.then((result) => {
+    logger.info("Claude process exited", {
+      pid: child.pid,
+      code: result.exitCode,
+      signal: result.signal,
+    });
+  });
 }
