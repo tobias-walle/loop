@@ -35,7 +35,7 @@ export async function processAgentEvents(
 
   ctx.logger.debug(`${stepLabel} - waiting for first agent event`);
 
-  for await (const event of session.events) {
+  for await (const event of normalizeAgentEvents(session)) {
     if (eventCount === 0) {
       ctx.logger.debug(`${stepLabel} - first agent event received`, { eventType: event.type });
     }
@@ -79,6 +79,15 @@ export async function processAgentEvents(
   }
 
   return { result, cost, duration, usage, hadError, errorMsg };
+}
+
+async function* normalizeAgentEvents(session: AgentSession): AsyncGenerator<AgentEvent> {
+  try {
+    yield* session.events;
+  } catch (error) {
+    session.abort();
+    yield { type: "error", message: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 type UsageLike = {

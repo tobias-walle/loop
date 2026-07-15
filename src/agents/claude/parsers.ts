@@ -16,7 +16,7 @@ export function parseClaudeLine(
   try {
     parsed = JSON.parse(line);
   } catch {
-    return [];
+    return line.trim() ? [{ type: "error", message: "Claude emitted malformed JSON" }] : [];
   }
 
   if (typeof parsed !== "object" || parsed === null || typeof parsed.type !== "string") {

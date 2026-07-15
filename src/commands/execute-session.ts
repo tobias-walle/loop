@@ -1,6 +1,7 @@
 import * as crypto from "node:crypto";
 import * as path from "node:path";
 import { createConfiguredAgent } from "../agents/factory.js";
+import { bestEffort } from "../lib/best-effort.js";
 import type { LoopRuntimeConfig } from "../lib/config/index.js";
 import { createLogger } from "../lib/logging.js";
 import type { loadRecipe } from "../lib/recipes/index.js";
@@ -239,32 +240,54 @@ export async function executeSession(options: ExecuteSessionOptions): Promise<nu
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
   } catch (error) {
-    await runner?.abortAndWait();
     const message = error instanceof Error ? error.message : String(error);
+    const reportRecoveryError = (operation: string, recoveryError: unknown): void => {
+      try {
+        logger.warn(`Could not ${operation} while handling run failure`, {
+          error: String(recoveryError),
+          originalError: message,
+        });
+      } catch {
+        // Recovery failures must not replace the original run error.
+      }
+    };
+    try {
+      await runner?.abortAndWait();
+    } catch (recoveryError) {
+      reportRecoveryError("stop the active agent", recoveryError);
+    }
     const attemptType = interrupted ? "attempt_aborted" : "attempt_failed";
-    logger.error("Run error", { source: "loop", type: "run_error", error: message });
-    record(attemptType, { error: message });
-    if (interrupted) tui?.showInterruption();
-    else tui?.handleEvent({ type: "error", message }, 0);
+    bestEffort(
+      () => logger.error("Run error", { source: "loop", type: "run_error", error: message }),
+      (recoveryError) => reportRecoveryError("log the run error", recoveryError),
+    );
+    bestEffort(
+      () => record(attemptType, { error: message }),
+      (recoveryError) => reportRecoveryError("persist the run error", recoveryError),
+    );
+    bestEffort(
+      () => {
+        if (interrupted) tui?.showInterruption();
+        else tui?.handleEvent({ type: "error", message }, 0);
+      },
+      (recoveryError) => reportRecoveryError("display the run error", recoveryError),
+    );
     exitCode = interrupted ? 130 : 1;
   } finally {
-    lockMonitor.stop();
-    heartbeat.stop();
-    try {
-      tui?.stop();
-    } finally {
-      try {
-        writeSessionProjection(session.sessionDir, loadSession(session.sessionDir).aggregate);
-      } catch (error) {
-        try {
-          logger.warn("Could not update session projection", { error: String(error) });
-        } catch {
-          // Projection failures must not prevent lock release.
-        }
-      } finally {
-        releaseSessionLock(session.sessionDir, lock.ownerId);
-      }
-    }
+    const cleanup = (operation: string, action: () => unknown): void =>
+      bestEffort(action, (error) => {
+        bestEffort(
+          () => logger.warn(`Could not ${operation} during cleanup`, { error: String(error) }),
+          () => {},
+        );
+      });
+    cleanup("stop the session lock monitor", () => lockMonitor.stop());
+    cleanup("stop the session lock heartbeat", () => heartbeat.stop());
+    cleanup("stop the TUI", () => tui?.stop());
+    cleanup("update the session projection", () =>
+      writeSessionProjection(session.sessionDir, loadSession(session.sessionDir).aggregate),
+    );
+    cleanup("release the session lock", () => releaseSessionLock(session.sessionDir, lock.ownerId));
   }
 
   return exitCode;

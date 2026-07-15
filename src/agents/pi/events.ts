@@ -177,7 +177,7 @@ function mapMessageUpdate(raw: Record<string, unknown>, state: PiEventState): Ag
 export function completePendingDone(
   state: PiEventState,
   stats?: Record<string, unknown>,
-): AgentEvent {
+): Extract<AgentEvent, { type: "done" }> {
   const pending = state.pendingDone;
   state.pendingDone = undefined;
   if (!pending) {

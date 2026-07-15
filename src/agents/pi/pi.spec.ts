@@ -76,7 +76,6 @@ process.exit(0);
 process.stdout.write(JSON.stringify({ type: "agent_start" }) + "\\n");
 process.stdout.write(JSON.stringify({ type: "agent_end", result: "done", usage: { input: 1, output: 1 } }) + "\\n");
 process.stdout.write(JSON.stringify({ type: "agent_settled" }) + "\\n");
-setInterval(() => {}, 1000);
 `,
     );
 
@@ -90,6 +89,33 @@ setInterval(() => {}, 1000);
     const done = events.find((event) => event.type === "done");
     expect(done?.type).toBe("done");
     if (done?.type === "done") expect(done.durationMs).toBeGreaterThanOrEqual(10);
+  });
+
+  test("reports stderr when the process fails after a completion event", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
+    const scriptPath = path.join(dir, "fake-pi.js");
+    fs.writeFileSync(
+      scriptPath,
+      `process.stdout.write(JSON.stringify({ type: "agent_start" }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "agent_end", result: "done", usage: { input: 1, output: 1 } }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "agent_settled" }) + "\\n");
+process.stderr.write("provider unavailable\\n");
+process.exitCode = 9;
+`,
+    );
+
+    const session = createPiAdapter({ command: process.execPath, rawArgs: [scriptPath] }).spawn(
+      "hello",
+    );
+    const events = [];
+    for await (const event of session.events) events.push(event);
+    await session.exited;
+
+    expect(events.at(-1)).toEqual({
+      type: "error",
+      message: "pi JSON process exited with code 9: provider unavailable",
+    });
+    expect(events.some((event) => event.type === "done")).toBe(false);
   });
 
   test("rejects --mode in args", () => {

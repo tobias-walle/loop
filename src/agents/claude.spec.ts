@@ -407,7 +407,7 @@ describe("parseClaudeLine", () => {
     ]);
   });
 
-  it("handles malformed JSON gracefully", () => {
+  it("reports malformed JSON as a protocol error", () => {
     const state = createState();
     const events = parseClaudeLine(
       "not valid json {{{",
@@ -415,7 +415,7 @@ describe("parseClaudeLine", () => {
       state.parents,
       state.toolIdToParent,
     );
-    expect(events).toEqual([]);
+    expect(events).toEqual([{ type: "error", message: "Claude emitted malformed JSON" }]);
   });
 
   it("handles empty line", () => {
@@ -966,7 +966,7 @@ describe("streamEvents", () => {
     expect(events[1].type).toBe("done");
   });
 
-  it("skips malformed JSON lines", async () => {
+  it("stops with an error on malformed JSON", async () => {
     const stream = new PassThrough();
     const promise = collect(streamEvents(stream));
 
@@ -980,11 +980,9 @@ describe("streamEvents", () => {
       usage: { input_tokens: 1, output_tokens: 1 },
     });
 
-    stream.end(`not-json\n{broken\n${resultLine}\n`);
+    stream.end(`not-json\n${resultLine}\n`);
 
-    const events = await promise;
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("done");
+    expect(await promise).toEqual([{ type: "error", message: "Claude emitted malformed JSON" }]);
   });
 
   it("handles streaming text deltas", async () => {

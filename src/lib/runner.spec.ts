@@ -290,6 +290,97 @@ describe("runner", () => {
     expect(result.stepResults[1].error).toBe("Skipped due to previous error");
   });
 
+  test("turns adapter spawn exceptions into structured step failures", async () => {
+    const events: string[] = [];
+    const runner = createRunner([{ type: "task", task: "work" }], {
+      agent: {
+        spawn() {
+          throw new Error("agent configuration failed");
+        },
+      },
+      onEvent(event) {
+        if (event.type === "error") events.push(event.message);
+      },
+    });
+
+    const result = await runner.run();
+
+    expect(result.success).toBe(false);
+    expect(result.stepResults[0]).toMatchObject({
+      exitReason: "error",
+      error: "agent configuration failed",
+    });
+    expect(events).toEqual(["agent configuration failed"]);
+  });
+
+  test("turns adapter event stream exceptions into structured step failures", async () => {
+    let aborted = false;
+    const runner = createRunner([{ type: "task", task: "work" }], {
+      agent: {
+        spawn() {
+          return {
+            events: (async function* () {
+              yield {
+                type: "session_start" as const,
+                model: "test",
+                sessionId: "test-session",
+                tools: [],
+              };
+              throw new Error("agent stream failed");
+            })(),
+            abort() {
+              aborted = true;
+            },
+            exited: Promise.resolve(),
+          };
+        },
+      },
+    });
+
+    const result = await runner.run();
+
+    expect(result.success).toBe(false);
+    expect(result.stepResults[0]).toMatchObject({
+      exitReason: "error",
+      error: "agent stream failed",
+    });
+    expect(aborted).toBe(true);
+  });
+
+  test("turns adapter exit exceptions into structured step failures", async () => {
+    let aborted = false;
+    const runner = createRunner([{ type: "task", task: "work" }], {
+      agent: {
+        spawn() {
+          return {
+            events: (async function* () {
+              yield {
+                type: "done" as const,
+                result: "done",
+                costUsd: 0,
+                durationMs: 1,
+                usage: { inputTokens: 0, outputTokens: 0 },
+              };
+            })(),
+            abort() {
+              aborted = true;
+            },
+            exited: Promise.reject(new Error("agent exit failed")),
+          };
+        },
+      },
+    });
+
+    const result = await runner.run();
+
+    expect(result.success).toBe(false);
+    expect(result.stepResults[0]).toMatchObject({
+      exitReason: "error",
+      error: "agent exit failed",
+    });
+    expect(aborted).toBe(true);
+  });
+
   test("passes step args to agent spawn", async () => {
     const seenArgs: unknown[] = [];
     const adapter = {

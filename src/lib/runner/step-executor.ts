@@ -83,11 +83,38 @@ export async function executeStep(
     ctx.logger.debug("Prompt built", { promptLength: prompt.length, stepIndex, iteration });
 
     const executionId = crypto.randomUUID();
-    const session = ctx.agent.spawn(prompt, { cwd: ctx.projectRoot, args: step.args });
+    let session: AgentSession;
+    try {
+      session = ctx.agent.spawn(prompt, { cwd: ctx.projectRoot, args: step.args });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failedIteration: IterationResult = {
+        result: "",
+        cost: 0,
+        duration: 0,
+        usage: emptyUsage(),
+        hadError: true,
+        errorMsg: message,
+      };
+      ctx.logger.error(`${stepLabel} - agent spawn failed: ${message}`);
+      ctx.onEvent?.({ type: "error", message }, stepIndex, executionId);
+      emitSessionComplete(
+        ctx,
+        stepIndex,
+        iteration,
+        executionId,
+        failedIteration,
+        "error",
+        message,
+      );
+      exitReason = "error";
+      errorMsg = message;
+      break;
+    }
     ctx.setCurrentSession(session);
     ctx.logger.info(`${stepLabel} - agent spawned`);
 
-    const iterResult = await processAgentEvents(
+    let iterResult = await processAgentEvents(
       {
         ...ctx,
         onEvent: ctx.onEvent
@@ -108,7 +135,14 @@ export async function executeStep(
     // Wait for the process to fully exit before continuing, so the next
     // iteration doesn't race with a still-shutting-down process (e.g. Claude
     // Code session locks).
-    await session.exited;
+    try {
+      await session.exited;
+    } catch (error) {
+      session.abort();
+      const message = error instanceof Error ? error.message : String(error);
+      ctx.onEvent?.({ type: "error", message }, stepIndex, executionId);
+      iterResult = { ...iterResult, result: "", hadError: true, errorMsg: message };
+    }
 
     ctx.setCurrentSession(null);
     totalCost += iterResult.cost;
