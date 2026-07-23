@@ -1,17 +1,14 @@
-import type { Component } from "@mariozechner/pi-tui";
+import { type Component, truncateToWidth } from "@mariozechner/pi-tui";
 import { dim, magenta } from "../../lib/ansi.js";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const FRAME_INTERVAL = 120;
-const MAX_LINE_LEN = 2 + "thinking".length;
 
 export class ThinkingIndicator implements Component {
   private text = "waiting";
   private startTime = 0;
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private requestRender: () => void;
-  private cachedLine: string | null = null;
-  private cachedFrame = -1;
 
   constructor(requestRender: () => void) {
     this.requestRender = requestRender;
@@ -19,15 +16,11 @@ export class ThinkingIndicator implements Component {
 
   setText(text: string): void {
     this.text = normalizeState(text);
-    this.cachedLine = null;
   }
 
   start(): void {
     this.startTime = Date.now();
-    this.intervalId = setInterval(() => {
-      this.cachedLine = null;
-      this.requestRender();
-    }, FRAME_INTERVAL);
+    this.intervalId = setInterval(this.requestRender, FRAME_INTERVAL);
   }
 
   stop(): void {
@@ -37,25 +30,13 @@ export class ThinkingIndicator implements Component {
     }
   }
 
-  invalidate(): void {
-    this.cachedLine = null;
-  }
+  invalidate(): void {}
 
   render(width: number): string[] {
     const elapsed = Date.now() - this.startTime;
     const frame = Math.floor(elapsed / FRAME_INTERVAL) % FRAMES.length;
-    if (this.cachedLine != null && this.cachedFrame === frame) {
-      return [this.cachedLine];
-    }
-
-    const spinner = magenta(FRAMES[frame]);
-    const line = `${spinner} ${dim(this.text)}`;
-    const pad = Math.max(0, width - MAX_LINE_LEN);
-    const out = `${line}${" ".repeat(pad)}`;
-
-    this.cachedLine = out;
-    this.cachedFrame = frame;
-    return [out];
+    const line = `${magenta(FRAMES[frame])} ${dim(this.text)}`;
+    return [truncateToWidth(line, width, "", true)];
   }
 }
 

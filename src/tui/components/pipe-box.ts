@@ -1,4 +1,4 @@
-import type { Component } from "@mariozechner/pi-tui";
+import { type Component, truncateToWidth } from "@mariozechner/pi-tui";
 import { RESET, dim, rgbFg } from "../../lib/ansi.js";
 
 /**
@@ -81,6 +81,6 @@ export class PipeBox implements Component {
     if (this.footer != null) {
       lines.push(`${c("└")} ${this.footer}`);
     }
-    return lines;
+    return lines.map((line) => truncateToWidth(line, width, "", true));
   }
 }
