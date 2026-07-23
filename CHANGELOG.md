@@ -2,8 +2,13 @@
 
 ## Unreleased
 
-- Add `loop resume` with global session browsing, history inspection, lock handling, and step-boundary continuation
+- Add `loop resume` with a styled global session browser, live-format history, full interactive transcript replay, lock handling, and step-boundary continuation
 - Persist resumable workflows, templates, agent settings, output, usage, and durable completion boundaries
+- Refactor live output into an owned inline renderer while preserving streaming text, tool hierarchy, spinner, status bar, and native scrollback
+- Emit plain, append-only output when stdout is redirected
+- Isolate session browsing in an alternate screen that restores the shell before resumed execution
+- Gracefully cancel active agents on SIGINT, SIGTERM, and SIGHUP
+- Remove the undocumented public `createLoopTUI`, `LoopTUI`, and `LoopTUIOptions` API
 
 ## 0.1.0
 

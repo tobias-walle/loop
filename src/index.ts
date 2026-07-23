@@ -81,8 +81,6 @@ export type {
   StepResult,
   TemplateContext,
 } from "./lib/types.js";
-export { createLoopTUI } from "./tui/loop-tui.js";
-export type { LoopTUI, LoopTUIOptions } from "./tui/loop-tui.js";
 export { isSandboxed } from "./lib/sandbox.js";
 export { createSessionDir, getProjectSlug, updateSessionStatus } from "./lib/session.js";
 export type { SessionMetadata, SessionStatus } from "./lib/session.js";

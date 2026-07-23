@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { stringField } from "./record-fields.js";
-import type { SessionOverview } from "./session-store.js";
 import { getLegacySessionEventsPath } from "./storage-paths.js";
 
 export function readLegacyHistory(sessionDir: string): string[] {
@@ -27,7 +26,7 @@ export function readLegacyHistory(sessionDir: string): string[] {
   return lines;
 }
 
-export function toLegacyOverview(sessionDir: string, projectRoot: string): SessionOverview {
+export function toLegacyOverview(sessionDir: string, projectRoot: string) {
   const eventsFile = getLegacySessionEventsPath(sessionDir);
   const stat = fs.statSync(eventsFile);
   const lines = fs.readFileSync(eventsFile, "utf-8").split("\n").filter(Boolean);
@@ -43,7 +42,7 @@ export function toLegacyOverview(sessionDir: string, projectRoot: string): Sessi
     id: path.basename(sessionDir),
     projectRoot,
     title: stringField(first, "task") ?? "Legacy session",
-    status: "legacy",
+    status: "legacy" as const,
     createdAt,
     updatedAt: stat.mtime.toISOString(),
     completedSteps: 0,
@@ -56,7 +55,7 @@ export function toLegacyOverview(sessionDir: string, projectRoot: string): Sessi
     canResume: false,
     disabledReason: "This session predates resume support and is history only.",
     interrupted: false,
-    lock: { health: "unlocked" },
+    lock: { health: "unlocked" as const },
     legacy: true,
   };
 }

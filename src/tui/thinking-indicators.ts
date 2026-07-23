@@ -1,5 +1,5 @@
 import { ThinkingIndicator } from "./components/thinking-indicator.js";
-import type { ChildContainer, LoopTUIState } from "./event-handlers.js";
+import type { ChildContainer, RunViewState } from "./event-handlers.js";
 
 export type ThinkingIndicators = {
   add(key: string, container: ChildContainer, label?: "waiting" | "thinking"): void;
@@ -9,7 +9,7 @@ export type ThinkingIndicators = {
 };
 
 export function createThinkingIndicators(
-  indicators: LoopTUIState["thinkingIndicators"],
+  indicators: RunViewState["thinkingIndicators"],
   requestRender: () => void,
   canAdd: () => boolean,
 ): ThinkingIndicators {

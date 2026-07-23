@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 
 import { handlePreTuiCommand } from "./commands/pre-command.js";
+import { createProcessRunOutput } from "./commands/process-run-output.js";
 import { resumeCommand } from "./commands/resume-command.js";
 import { runCommand } from "./commands/run-command.js";
+import { createShutdownSignals } from "./commands/shutdown-signals.js";
 import { CliError, parseCliArgs } from "./lib/cli-command.js";
 
 async function main(): Promise<number> {
+  using signals = createShutdownSignals();
+  const stdout = createProcessRunOutput(process.stdout);
   let config: ReturnType<typeof parseCliArgs>;
   try {
     config = parseCliArgs(process.argv.slice(2));
@@ -18,14 +22,21 @@ async function main(): Promise<number> {
   }
 
   if (handlePreTuiCommand(config, (message) => console.log(message))) return 0;
-  if (config.command === "resume")
-    return resumeCommand({ writeError: (message) => console.error(message) });
-  return runCommand(config, { writeError: (message) => console.error(message) });
+  const io = {
+    stdout,
+    signal: signals.signal,
+    writeError: (message: string): void => console.error(message),
+  };
+  const result =
+    config.command === "resume" ? await resumeCommand(io) : await runCommand(config, io);
+  return signals.exitCode ?? result;
 }
 
 main()
-  .then((exitCode) => process.exit(exitCode))
+  .then((exitCode) => {
+    process.exitCode = exitCode;
+  })
   .catch((error) => {
     console.error(error);
-    process.exit(1);
+    process.exitCode = 1;
   });

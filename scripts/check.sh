@@ -18,10 +18,12 @@ run() {
 }
 
 run "biome"     bun run --silent check:biome
-run "typecheck" bun run --silent check:types
-run "test"      bun run --silent check:test
+run "typecheck"    bun run --silent check:types
+run "dependencies" bun run --silent check:deps
+run "test"         bun run --silent check:test
 run "knip"      bun run --silent check:knip
 run "build"     bun run --silent build
+run "CLI smoke" sh -c 'node dist/cli.js --version'
 
 echo ""
 if [ "$failed" -gt 0 ]; then

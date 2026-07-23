@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { Container } from "@mariozechner/pi-tui";
 import { createStubAdapter } from "../agents/stub.js";
 import { PARALLEL_SUBAGENTS } from "../testing/scenarios/tools.js";
-import { createEventRouter } from "./app.js";
 import { PipeBox } from "./components/pipe-box.js";
 import { ThinkingIndicator } from "./components/thinking-indicator.js";
 import { ROOT_KEY } from "./event-handlers.js";
+import { createEventRouter } from "./event-router.js";
 
 function setup() {
   const root = new Container();

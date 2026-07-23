@@ -1,12 +1,12 @@
 import * as crypto from "node:crypto";
-import * as path from "node:path";
 import { createConfiguredAgent } from "../agents/factory.js";
 import { bestEffort } from "../lib/best-effort.js";
 import type { LoopRuntimeConfig } from "../lib/config/index.js";
 import { createLogger } from "../lib/logging.js";
 import type { loadRecipe } from "../lib/recipes/index.js";
 import { createRunner } from "../lib/runner.js";
-import { type SessionEventType, appendSessionEvent, createEvent } from "../lib/session-events.js";
+import { appendSessionEvent } from "../lib/session-event-store.js";
+import { type SessionEvent, type SessionEventType, createEvent } from "../lib/session-event.js";
 import {
   acquireSessionLock,
   releaseSessionLock,
@@ -16,10 +16,8 @@ import {
 import { type SessionRecord, loadSession, writeSessionProjection } from "../lib/session-store.js";
 import { createResumableSession } from "../lib/session.js";
 import type { loadTemplate } from "../lib/template.js";
-import type { LoopConfig } from "../lib/types.js";
-import { createLoopTUI } from "../tui/loop-tui.js";
-import { describeStep } from "../tui/step-display.js";
-import { logSessionSetup, updateSessionDisplay } from "./session-display.js";
+import type { LoopConfig, Step } from "../lib/types.js";
+import type { RunReporter } from "../output/run-reporter.js";
 
 export interface ExecuteSessionOptions {
   config: LoopConfig;
@@ -28,17 +26,14 @@ export interface ExecuteSessionOptions {
   loadedRecipe?: ReturnType<typeof loadRecipe>;
   projectRoot: string;
   resumeSession?: SessionRecord;
-  tui?: ReturnType<typeof createLoopTUI>;
-  registerInterrupt?: (handler: () => void) => void;
+  reporter: RunReporter;
+  signal?: AbortSignal;
 }
 
 export async function executeSession(options: ExecuteSessionOptions): Promise<number> {
-  const { config, runtimeConfig, template, loadedRecipe, projectRoot } = options;
-  const session = options.resumeSession?.aggregate.invocation
-    ? {
-        sessionDir: options.resumeSession.sessionDir,
-        invocation: options.resumeSession.aggregate.invocation,
-      }
+  const { config, runtimeConfig, template, loadedRecipe, projectRoot, reporter, signal } = options;
+  const created = options.resumeSession?.aggregate.invocation
+    ? undefined
     : createResumableSession({
         loopVersion: "0.1.0",
         projectRoot,
@@ -57,6 +52,16 @@ export async function executeSession(options: ExecuteSessionOptions): Promise<nu
         },
         ...(loadedRecipe ? { recipe: { name: loadedRecipe.name, path: loadedRecipe.path } } : {}),
       });
+  const session = options.resumeSession?.aggregate.invocation
+    ? {
+        sessionDir: options.resumeSession.sessionDir,
+        invocation: options.resumeSession.aggregate.invocation,
+      }
+    : created;
+  if (!session) throw new Error("Could not initialize the session.");
+  if (created) reportBestEffort(reporter, created.createdEvent);
+  else replayPresentation(reporter, options.resumeSession?.events ?? []);
+
   const lock = acquireSessionLock(session.sessionDir, session.invocation.sessionId);
   const resumed = options.resumeSession ? loadSession(session.sessionDir) : undefined;
   if (resumed && !resumed.aggregate.resumable) {
@@ -65,43 +70,41 @@ export async function executeSession(options: ExecuteSessionOptions): Promise<nu
   }
   const heartbeat = startLockHeartbeat(session.sessionDir, lock.ownerId);
   const ownership = { ownerId: lock.ownerId, attemptId: lock.attemptId };
-  const record = <T extends Record<string, unknown>>(type: SessionEventType, data: T): void => {
-    appendSessionEvent(session.sessionDir, createEvent(type, data, ownership));
+  const recordEvent = (event: SessionEvent): void => {
+    appendSessionEvent(session.sessionDir, event);
+    reportBestEffort(reporter, event);
   };
-  const logger = createLogger(session.sessionDir, ownership);
+  const record = <T extends Record<string, unknown>>(type: SessionEventType, data: T): void =>
+    recordEvent(createEvent(type, data, ownership));
+  const logger = createLogger(
+    session.sessionDir,
+    ownership,
+    reportBestEffort.bind(undefined, reporter),
+  );
   let runner: ReturnType<typeof createRunner> | undefined;
+  let interrupted = signal?.aborted ?? false;
+  let exitCode = 1;
   const startedExecutions = new Set<string>();
   const stepExecutions = new Map<number, string[]>();
-  let interrupted = false;
-  let tui: ReturnType<typeof createLoopTUI> | undefined = options.tui;
-  let exitCode = 1;
-  const lockMonitor = startSessionLockMonitor(session.sessionDir, lock.ownerId, () => {
+  const abort = (): void => {
     interrupted = true;
     runner?.abort();
-  });
+  };
+  signal?.addEventListener("abort", abort, { once: true });
+  const lockMonitor = startSessionLockMonitor(session.sessionDir, lock.ownerId, abort);
 
   try {
     record("attempt_started", {});
+    if (interrupted) {
+      record("attempt_aborted", {});
+      return 130;
+    }
     const adapter = createConfiguredAgent({
       selectedAgent: runtimeConfig.agent,
       config: runtimeConfig,
       passthroughArgs: config.passthroughArgs ?? [],
       logger,
     });
-    logSessionSetup(logger, session.sessionDir, config, runtimeConfig, loadedRecipe);
-
-    tui ??= createLoopTUI({
-      onInterrupt: () => {
-        interrupted = true;
-        runner?.abort();
-      },
-    });
-    if (options.tui) tui.showRunScreen();
-    options.registerInterrupt?.(() => {
-      interrupted = true;
-      runner?.abort();
-    });
-
     const completedSteps = resumed
       ? [...resumed.aggregate.completedSteps.values()]
           .sort((a, b) => a.stepIndex - b.stepIndex)
@@ -124,44 +127,18 @@ export async function executeSession(options: ExecuteSessionOptions): Promise<nu
           }
         : {}),
       onEvent: (event, stepIndex, executionId) => {
-        if (!startedExecutions.has(executionId)) {
-          startedExecutions.add(executionId);
-          record("agent_session_started", { stepIndex, executionId });
-        }
+        ensureSessionStarted(startedExecutions, executionId, stepIndex, record);
         record("agent_event", { stepIndex, executionId, event });
-        tui?.handleEvent(event, stepIndex);
-        updateSessionDisplay(tui, runner, stepIndex, config.steps.length);
       },
-      onStepExecutionStart: (stepIndex, step) => {
-        record("step_started", { stepIndex, step });
-      },
-      onStepStart: (stepIndex, step, iteration) => {
-        const { task, isLoop, max } = describeStep(step);
-        record("step_iteration_started", { stepIndex, iteration, max });
-        tui?.showStepHeader(
-          stepIndex + 1,
-          config.steps.length,
-          task,
-          isLoop ? iteration : undefined,
-          max,
-          undefined,
-          runtimeConfig.agent,
-          { ...runtimeConfig.agents[runtimeConfig.agent].args, ...(step.args ?? {}) },
-        );
-        updateSessionDisplay(
-          tui,
-          runner,
+      onStepExecutionStart: (stepIndex, step) => record("step_started", { stepIndex, step }),
+      onStepStart: (stepIndex, step, iteration) =>
+        record("step_iteration_started", {
           stepIndex,
-          config.steps.length,
-          isLoop ? iteration : undefined,
-          max,
-        );
-      },
+          iteration,
+          ...(stepMax(step) === undefined ? {} : { max: stepMax(step) }),
+        }),
       onSessionComplete: (stepIndex, result, executionId) => {
-        if (!startedExecutions.has(executionId)) {
-          startedExecutions.add(executionId);
-          record("agent_session_started", { stepIndex, executionId });
-        }
+        ensureSessionStarted(startedExecutions, executionId, stepIndex, record);
         const executionIds = stepExecutions.get(stepIndex) ?? [];
         executionIds.push(executionId);
         stepExecutions.set(stepIndex, executionIds);
@@ -180,15 +157,6 @@ export async function executeSession(options: ExecuteSessionOptions): Promise<nu
             iteration: result.iteration,
           },
         );
-        if (result.exitReason !== "error") {
-          tui?.showCompletion(
-            result.exitReason,
-            result.durationMs,
-            result.iteration,
-            result.costUsd,
-            result.usage,
-          );
-        }
       },
       onStepComplete: (stepIndex, result) => {
         if (interrupted) record("step_cancelled", { stepIndex, result });
@@ -202,93 +170,93 @@ export async function executeSession(options: ExecuteSessionOptions): Promise<nu
           });
           writeSessionProjection(session.sessionDir, loadSession(session.sessionDir).aggregate);
         }
-        updateSessionDisplay(tui, runner, stepIndex, config.steps.length);
       },
     });
 
-    if (!options.tui) tui.start();
-    tui.showSessionInfo(path.basename(session.sessionDir));
-    logger.debug("TUI initialized", { source: "loop", type: "tui_started" });
-
     const result = await runner.run();
-    const attemptType = interrupted
-      ? "attempt_aborted"
-      : result.success
-        ? "attempt_completed"
-        : "attempt_failed";
-    record(attemptType, {});
-    if (interrupted) tui.showInterruption();
+    if (interrupted) await runner.abortAndWait();
+    record(
+      interrupted ? "attempt_aborted" : result.success ? "attempt_completed" : "attempt_failed",
+      {},
+    );
     if (result.success && !interrupted) record("run_completed", {});
     exitCode = interrupted ? 130 : result.success ? 0 : 1;
-
-    if (!(result.success || interrupted)) {
-      const failedStep = result.stepResults.find((item) => item.exitReason === "error");
-      logger.warn("Run finished with failure", {
-        source: "loop",
-        type: "run_failure",
-        failedStepError: failedStep?.error,
-        failedStepExitReason: failedStep?.exitReason,
-      });
-      if (failedStep?.error) tui.handleEvent({ type: "error", message: failedStep.error }, 0);
-    }
-    if (!interrupted) {
-      tui.showRunSummary({
-        totalCostUsd: result.totalCostUsd,
-        totalDurationMs: result.totalDurationMs,
-        totalUsage: result.totalUsage,
-      });
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const reportRecoveryError = (operation: string, recoveryError: unknown): void => {
-      try {
-        logger.warn(`Could not ${operation} while handling run failure`, {
-          error: String(recoveryError),
-          originalError: message,
-        });
-      } catch {
-        // Recovery failures must not replace the original run error.
-      }
-    };
-    try {
-      await runner?.abortAndWait();
-    } catch (recoveryError) {
-      reportRecoveryError("stop the active agent", recoveryError);
-    }
-    const attemptType = interrupted ? "attempt_aborted" : "attempt_failed";
+    await bestEffortAbort(runner);
     bestEffort(
-      () => logger.error("Run error", { source: "loop", type: "run_error", error: message }),
-      (recoveryError) => reportRecoveryError("log the run error", recoveryError),
+      () => logger.error("Run error", { error: message }),
+      () => {},
     );
     bestEffort(
-      () => record(attemptType, { error: message }),
-      (recoveryError) => reportRecoveryError("persist the run error", recoveryError),
-    );
-    bestEffort(
-      () => {
-        if (interrupted) tui?.showInterruption();
-        else tui?.handleEvent({ type: "error", message }, 0);
-      },
-      (recoveryError) => reportRecoveryError("display the run error", recoveryError),
+      () => record(interrupted ? "attempt_aborted" : "attempt_failed", { error: message }),
+      () => {},
     );
     exitCode = interrupted ? 130 : 1;
   } finally {
-    const cleanup = (operation: string, action: () => unknown): void =>
-      bestEffort(action, (error) => {
-        bestEffort(
-          () => logger.warn(`Could not ${operation} during cleanup`, { error: String(error) }),
-          () => {},
-        );
-      });
-    cleanup("stop the session lock monitor", () => lockMonitor.stop());
-    cleanup("stop the session lock heartbeat", () => heartbeat.stop());
-    cleanup("stop the TUI", () => tui?.stop());
-    cleanup("update the session projection", () =>
-      writeSessionProjection(session.sessionDir, loadSession(session.sessionDir).aggregate),
+    signal?.removeEventListener("abort", abort);
+    if (interrupted) await bestEffortAbort(runner);
+    bestEffort(
+      () => lockMonitor.stop(),
+      () => {},
     );
-    cleanup("release the session lock", () => releaseSessionLock(session.sessionDir, lock.ownerId));
+    bestEffort(
+      () => heartbeat.stop(),
+      () => {},
+    );
+    bestEffort(
+      () => writeSessionProjection(session.sessionDir, loadSession(session.sessionDir).aggregate),
+      () => {},
+    );
+    bestEffort(
+      () => releaseSessionLock(session.sessionDir, lock.ownerId),
+      () => {},
+    );
   }
-
   return exitCode;
+}
+
+function reportBestEffort(reporter: RunReporter, event: SessionEvent | undefined): void {
+  if (event)
+    bestEffort(
+      () => reporter.report(event),
+      () => {},
+    );
+}
+
+function replayPresentation(reporter: RunReporter, events: readonly SessionEvent[]): void {
+  if (reporter.replay) {
+    bestEffort(
+      () => reporter.replay?.(events),
+      () => {},
+    );
+    return;
+  }
+  for (const event of events) {
+    if (event.type === "session_created" || event.type === "agent_usage_updated") {
+      reportBestEffort(reporter, event);
+    }
+  }
+}
+
+async function bestEffortAbort(runner: ReturnType<typeof createRunner> | undefined): Promise<void> {
+  try {
+    await runner?.abortAndWait();
+  } catch {}
+}
+
+function ensureSessionStarted(
+  started: Set<string>,
+  executionId: string,
+  stepIndex: number,
+  record: (type: SessionEventType, data: Record<string, unknown>) => void,
+): void {
+  if (started.has(executionId)) return;
+  started.add(executionId);
+  record("agent_session_started", { stepIndex, executionId });
+}
+
+function stepMax(step: Step): number | undefined {
+  if (step.repeat !== undefined) return step.repeat;
+  return step.until !== undefined ? step.max : undefined;
 }

@@ -10,6 +10,7 @@ import {
   magenta,
   yellow,
 } from "../lib/ansi.js";
+import { formatDuration, formatTokens } from "../lib/format.js";
 import type { RunSummary, TokenUsage } from "../lib/types.js";
 
 const TOOL_LABEL_WIDTH = 6;
@@ -154,30 +155,7 @@ export function formatStepHeader(
   ).join("\n");
 }
 
-export function formatDuration(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  if (min > 0) {
-    return `${min}m ${sec.toString().padStart(2, "0")}s`;
-  }
-  return `${sec}s`;
-}
-
-export function formatTokens(usage: TokenUsage): string {
-  const total = usage.inputTokens + usage.outputTokens;
-  return `${formatTokenCount(total)} tokens`;
-}
-
-export function formatTokenCount(n: number): string {
-  if (n >= 1_000_000) {
-    return `${(n / 1_000_000).toFixed(1)}M`;
-  }
-  if (n >= 1_000) {
-    return `${(n / 1_000).toFixed(1)}k`;
-  }
-  return String(n);
-}
+export { formatDuration, formatTokenCount, formatTokens } from "../lib/format.js";
 
 export function formatInterruption(): string {
   return formatStatusLine("▲", "interrupted", "", yellow);

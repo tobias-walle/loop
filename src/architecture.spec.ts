@@ -29,16 +29,6 @@ function readFile(file: string): string {
   return fs.readFileSync(file, "utf-8");
 }
 
-function getLayer(rel: string): string {
-  if (rel.startsWith("lib/")) return "lib";
-  if (rel.startsWith("agents/")) return "agents";
-  if (rel.startsWith("tui/")) return "tui";
-  if (rel.startsWith("testing/")) return "testing";
-  if (rel === "cli.ts") return "cli";
-  if (rel === "index.ts") return "index";
-  return "other";
-}
-
 describe("architecture rules", () => {
   const files = getProductionFiles();
 
@@ -75,62 +65,6 @@ describe("architecture rules", () => {
     expect(violations).toEqual([]);
   });
 
-  test("layer direction: lib/ never imports tui/ or agents/", () => {
-    const violations: string[] = [];
-    for (const file of files) {
-      const rel = relativePath(file);
-      if (getLayer(rel) !== "lib") continue;
-      const content = readFile(file);
-      const imports = content.match(/from\s+["']([^"']+)["']/g) ?? [];
-      for (const imp of imports) {
-        const target = imp.match(/from\s+["']([^"']+)["']/)?.[1] ?? "";
-        if (target.includes("/tui/") || target.includes("/agents/")) {
-          // Allow agents/types.js since runner needs the AgentAdapter interface
-          if (target.endsWith("/agents/types.js")) continue;
-          violations.push(`${rel} imports ${target}`);
-        }
-      }
-    }
-
-    expect(violations).toEqual([]);
-  });
-
-  test("layer direction: agents/ never imports tui/", () => {
-    const violations: string[] = [];
-    for (const file of files) {
-      const rel = relativePath(file);
-      if (getLayer(rel) !== "agents") continue;
-      const content = readFile(file);
-      const imports = content.match(/from\s+["']([^"']+)["']/g) ?? [];
-      for (const imp of imports) {
-        const target = imp.match(/from\s+["']([^"']+)["']/)?.[1] ?? "";
-        if (target.includes("/tui/")) {
-          violations.push(`${rel} imports ${target}`);
-        }
-      }
-    }
-
-    expect(violations).toEqual([]);
-  });
-
-  test("layer direction: tui/ never imports agents/ (except types)", () => {
-    const violations: string[] = [];
-    for (const file of files) {
-      const rel = relativePath(file);
-      if (getLayer(rel) !== "tui") continue;
-      const content = readFile(file);
-      const imports = content.match(/from\s+["']([^"']+)["']/g) ?? [];
-      for (const imp of imports) {
-        const target = imp.match(/from\s+["']([^"']+)["']/)?.[1] ?? "";
-        if (target.includes("/agents/") && !target.endsWith("/agents/types.js")) {
-          violations.push(`${rel} imports ${target}`);
-        }
-      }
-    }
-
-    expect(violations).toEqual([]);
-  });
-
   test("no process.stdout.write outside tui/", () => {
     const violations: string[] = [];
     const pattern = /process\.stdout\.write/;
@@ -147,6 +81,30 @@ describe("architecture rules", () => {
     expect(violations).toEqual([]);
   });
 
+  test("only the live reporter owns a presentation interval", () => {
+    const intervalOwners = files
+      .filter((file) => {
+        const rel = relativePath(file);
+        return rel.startsWith("output/") || rel.startsWith("tui/");
+      })
+      .filter((file) => /\bsetInterval\s*\(/.test(readFile(file)))
+      .map(relativePath);
+
+    expect(intervalOwners).toEqual(["tui/live-run-reporter.ts"]);
+  });
+
+  test("live output and browser history share the run event projector", () => {
+    const consumers = files
+      .filter((file) => readFile(file).includes('from "./run-event-projector.js"'))
+      .map(relativePath);
+    const browserConsumers = files
+      .filter((file) => readFile(file).includes('from "../run-event-projector.js"'))
+      .map(relativePath);
+
+    expect(consumers).toEqual(["tui/live-run-reporter.ts"]);
+    expect(browserConsumers).toEqual(["tui/session-browser/timeline.ts"]);
+  });
+
   test("no direct fs writes outside allowlist", () => {
     const violations: string[] = [];
     const fsWritePattern =
@@ -154,7 +112,7 @@ describe("architecture rules", () => {
     const allowlist = new Set([
       "lib/logging.ts",
       "lib/session.ts",
-      "lib/session-events.ts",
+      "lib/session-event-store.ts",
       "lib/session-lock.ts",
       "lib/session-store.ts",
       "commands/init-command.ts",

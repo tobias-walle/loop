@@ -1,7 +1,8 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { type StoredInvocation, appendSessionEvent, createEvent } from "./session-events.js";
+import { appendSessionEvent } from "./session-event-store.js";
+import { type SessionEvent, type StoredInvocation, createEvent } from "./session-event.js";
 import { reduceSessionEvents } from "./session-reducer.js";
 import { writeSessionProjection } from "./session-store.js";
 import { getSessionMetadataPath, getSessionsDir } from "./storage-paths.js";
@@ -68,7 +69,11 @@ export function createSessionDir(
 export function createResumableSession(
   invocation: Omit<StoredInvocation, "sessionId" | "projectRoot"> & { projectRoot?: string },
   env: NodeJS.ProcessEnv = process.env,
-): { sessionDir: string; invocation: StoredInvocation } {
+): {
+  sessionDir: string;
+  invocation: StoredInvocation;
+  createdEvent: SessionEvent<StoredInvocation>;
+} {
   const projectRoot = invocation.projectRoot ?? process.cwd();
   const sessionDir = createSessionDir(projectRoot, env);
   const stored: StoredInvocation = {
@@ -79,7 +84,7 @@ export function createResumableSession(
   const created = createEvent("session_created", stored);
   appendSessionEvent(sessionDir, created);
   writeSessionProjection(sessionDir, reduceSessionEvents([created]));
-  return { sessionDir, invocation: stored };
+  return { sessionDir, invocation: stored, createdEvent: created };
 }
 
 export function updateSessionStatus(

@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { appendSessionEvent, createEvent, readSessionEvents } from "./lib/session-events.js";
+import { appendSessionEvent, readSessionEvents } from "./lib/session-event-store.js";
+import { createEvent } from "./lib/session-event.js";
 import { createResumableSession } from "./lib/session.js";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..");
@@ -303,7 +304,7 @@ describe("CLI interruption", () => {
     );
     fs.writeFileSync(
       fakePiPath,
-      `#!${process.execPath}\nimport fs from "node:fs";\nfs.writeFileSync(${JSON.stringify(agentPidPath)}, String(process.pid));\nprocess.stdout.write(JSON.stringify({ type: "session", id: "fake-session" }) + "\\n");\nprocess.stdout.write(JSON.stringify({ type: "agent_start", model: "fake-pi" }) + "\\n");\nsetInterval(() => {}, 1000);\nprocess.on("SIGTERM", () => {\n  fs.writeFileSync(${JSON.stringify(termSeenPath)}, "seen");\n});\n`,
+      `#!${process.execPath}\nimport fs from "node:fs";\nsetInterval(() => {}, 1000);\nprocess.on("SIGTERM", () => {\n  fs.writeFileSync(${JSON.stringify(termSeenPath)}, "seen");\n});\nprocess.stdout.write(JSON.stringify({ type: "session", id: "fake-session" }) + "\\n");\nprocess.stdout.write(JSON.stringify({ type: "agent_start", model: "fake-pi" }) + "\\n");\nfs.writeFileSync(${JSON.stringify(agentPidPath)}, String(process.pid));\n`,
       { mode: 0o755 },
     );
 
@@ -329,11 +330,9 @@ describe("CLI interruption", () => {
       await waitFor(() => fs.existsSync(agentPidPath));
       agentPid = Number(fs.readFileSync(agentPidPath, "utf-8"));
 
-      cli.stdin.write("\x03");
-      await cli.stdin.flush();
+      cli.kill("SIGINT");
       await waitFor(() => fs.existsSync(termSeenPath));
-      cli.stdin.write("\x03");
-      await cli.stdin.flush();
+      cli.kill("SIGINT");
 
       const exitCode = await Promise.race([cli.exited, Bun.sleep(3_000).then(() => undefined)]);
       if (exitCode === undefined) {
@@ -368,7 +367,7 @@ describe("CLI interruption", () => {
     );
     fs.writeFileSync(
       fakePiPath,
-      `#!${process.execPath}\nimport fs from "node:fs";\nfs.writeFileSync(${JSON.stringify(agentPidPath)}, String(process.pid));\nprocess.stdout.write(JSON.stringify({ type: "session", id: "fake-session" }) + "\\n");\nprocess.stdout.write(JSON.stringify({ type: "agent_start", model: "fake-pi" }) + "\\n");\nconst keepAlive = setInterval(() => {}, 1000);\nprocess.on("SIGTERM", () => {\n  clearInterval(keepAlive);\n  setTimeout(() => {\n    fs.writeFileSync(${JSON.stringify(agentCleanupPath)}, "done");\n    process.exit(0);\n  }, 150);\n});\n`,
+      `#!${process.execPath}\nimport fs from "node:fs";\nconst keepAlive = setInterval(() => {}, 1000);\nprocess.on("SIGTERM", () => {\n  clearInterval(keepAlive);\n  setTimeout(() => {\n    fs.writeFileSync(${JSON.stringify(agentCleanupPath)}, "done");\n    process.exit(0);\n  }, 150);\n});\nprocess.stdout.write(JSON.stringify({ type: "session", id: "fake-session" }) + "\\n");\nprocess.stdout.write(JSON.stringify({ type: "agent_start", model: "fake-pi" }) + "\\n");\nfs.writeFileSync(${JSON.stringify(agentPidPath)}, String(process.pid));\n`,
       { mode: 0o755 },
     );
 
@@ -394,9 +393,7 @@ describe("CLI interruption", () => {
       await waitFor(() => fs.existsSync(agentPidPath));
       agentPid = Number(fs.readFileSync(agentPidPath, "utf-8"));
 
-      cli.stdin.write("\x1b[99;5:1u");
-      cli.stdin.write("\x1b[99;5:3u");
-      await cli.stdin.flush();
+      cli.kill("SIGINT");
 
       const exitCode = await Promise.race([cli.exited, Bun.sleep(3_000).then(() => undefined)]);
       if (exitCode === undefined) {

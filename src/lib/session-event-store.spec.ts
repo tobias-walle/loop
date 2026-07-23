@@ -2,7 +2,8 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { appendSessionEvent, createEvent, readSessionEvents } from "./session-events";
+import { appendSessionEvent, readSessionEvents } from "./session-event-store.js";
+import { createEvent } from "./session-event.js";
 import { getSessionEventsPath } from "./storage-paths";
 
 const temporaryDirs: string[] = [];
@@ -17,7 +18,7 @@ afterEach(() => {
   for (const dir of temporaryDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-describe("session events", () => {
+describe("session event store", () => {
   test("appends and reads versioned events", () => {
     const dir = sessionDir();
     const first = createEvent("attempt_started", { attempt: 1 });

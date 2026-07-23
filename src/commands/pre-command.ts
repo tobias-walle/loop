@@ -10,7 +10,11 @@ export function handlePreTuiCommand(config: LoopConfig, write: (message: string)
     return true;
   }
   if (config.command === "version") {
-    const pkgPath = path.resolve(import.meta.dirname ?? ".", "../../package.json");
+    const moduleDir = import.meta.dirname ?? ".";
+    const pkgPath = ["../package.json", "../../package.json"]
+      .map((candidate) => path.resolve(moduleDir, candidate))
+      .find((candidate) => fs.existsSync(candidate));
+    if (!pkgPath) throw new Error("Could not locate package.json.");
     write((JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { version: string }).version);
     return true;
   }

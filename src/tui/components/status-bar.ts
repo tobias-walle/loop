@@ -33,6 +33,10 @@ export class StatusBar implements Component {
     this.hidden = true;
   }
 
+  show(): void {
+    this.hidden = false;
+  }
+
   invalidate(): void {
     // No caching
   }

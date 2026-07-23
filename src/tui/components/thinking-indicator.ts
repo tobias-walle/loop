@@ -7,12 +7,8 @@ const FRAME_INTERVAL = 120;
 export class ThinkingIndicator implements Component {
   private text = "waiting";
   private startTime = 0;
-  private intervalId: ReturnType<typeof setInterval> | null = null;
-  private requestRender: () => void;
 
-  constructor(requestRender: () => void) {
-    this.requestRender = requestRender;
-  }
+  constructor(private readonly requestRender: () => void) {}
 
   setText(text: string): void {
     this.text = normalizeState(text);
@@ -20,15 +16,10 @@ export class ThinkingIndicator implements Component {
 
   start(): void {
     this.startTime = Date.now();
-    this.intervalId = setInterval(this.requestRender, FRAME_INTERVAL);
+    this.requestRender();
   }
 
-  stop(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
-  }
+  stop(): void {}
 
   invalidate(): void {}
 

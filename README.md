@@ -1,6 +1,6 @@
 # Loop
 
-A CLI tool that runs coding agents in loops and sequences with a minimal TUI for monitoring and interaction. Ships with a Claude Code adapter, but the agent layer is abstracted so other agents can be plugged in.
+A CLI tool that runs coding agents in loops and sequences with streaming terminal output. Ships with a Claude Code adapter, but the agent layer is abstracted so other agents can be plugged in.
 
 ## Installation
 
@@ -224,19 +224,25 @@ These are project inputs. They can be committed when the team should share them.
 
 Project slugs combine the folder name with a short hash, so projects with the same name do not share sessions. Session IDs start with a UTC timestamp, making directories sortable. Loop retains sessions until you delete them.
 
-Run `loop resume` to browse sessions from every project, inspect their history, and continue an unfinished workflow. Resume starts at the first incomplete step. Completed steps are skipped, while an interrupted step restarts from iteration 1 in a fresh agent process. The stored workflow, template, agent settings, and project root are reused. Legacy and completed sessions remain viewable but cannot be continued.
+Run `loop resume` to browse sessions from every project, inspect their history, and continue an unfinished workflow. The selector and history view use semantic colors, and stored history is rendered with the same headers, assistant markers, tool hierarchy, nested-agent pipes, and completion boundaries as live output. The browser uses an isolated alternate screen. Use `j`/`k` or arrows for line navigation, `u`/`d` or Ctrl+u/Ctrl+d for half-page jumps, PageUp/PageDown for full pages, `g`/Home and `G`/End for the start and end, Enter to inspect or resume, and `q`/Escape to go back or exit. The alternate screen and terminal modes are restored before resumed output or the shell becomes visible.
+
+Resume starts at the first incomplete step. In an interactive terminal, Loop first rebuilds the prior transcript from persisted events through the live renderer, then appends the new attempt. Completed steps are skipped, while an interrupted step restarts from iteration 1 in a fresh agent process. The stored workflow, template, agent settings, and project root are reused. Legacy and completed sessions remain viewable but cannot be continued. Redirected resume output does not repeat the prior transcript.
 
 ## How it works
 
 Each step in the pipeline spawns a fresh agent session. For `--until` loops, the agent is instructed to end its response with `LOOP_DONE` or `LOOP_CONTINUE: <status>`. Loop checks the last line and decides whether to keep going or advance.
 
-The TUI streams agent output in real time: text, tool calls, retries, and subagent activity. A status bar at the bottom shows the current step, iteration, cost, and elapsed time.
+In an interactive terminal, live runs use an inline differential renderer. Assistant text streams as it arrives, tool calls and nested agents retain their visual hierarchy, and the waiting spinner and usage status stay live. The renderer updates only changed lines at the bottom of the terminal. It never enters raw mode or the alternate screen, and erase-scrollback controls are filtered so native scrolling, selection, resize, and zoom remain available.
+
+The live renderer owns one animation clock, its resize listener, cursor restoration, and final render flushing. Ctrl+C requests graceful agent shutdown through process signals rather than terminal input handling. SIGTERM and SIGHUP use the same cleanup path with conventional exit codes.
+
+When stdout is redirected, Loop switches to append-only plain text without ANSI color or terminal control sequences. Completed assistant blocks, tool calls, retries, and summaries remain suitable for files and pipelines.
 
 ## Development
 
 ```bash
 bun install
-bun run check         # biome, typecheck, tests, and knip (run before committing)
+bun run check         # biome, typecheck, dependencies, tests, knip, build, and smoke test
 bun test              # run tests only
 bun run build         # bundle to dist/
 ```

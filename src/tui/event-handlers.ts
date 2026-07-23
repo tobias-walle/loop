@@ -17,7 +17,7 @@ export type ChildContainer = Component & {
 /** A node with stop/setText methods (e.g. ThinkingIndicator). */
 export type IndicatorNode = Component & { stop(): void; setText(t: string): void };
 
-export interface LoopTUIState {
+export interface RunViewState {
   containerStack: ChildContainer[];
   toolIdToContainer: Map<string, ChildContainer>;
   toolIdToParentContainer: Map<string, ChildContainer>;
@@ -27,7 +27,7 @@ export interface LoopTUIState {
 
 export function handleTextDelta(
   event: Extract<AgentEvent, { type: "text_delta" }>,
-  state: LoopTUIState,
+  state: RunViewState,
   requestRender: () => void,
   containerForEvent: (parentToolUseId: string | null) => ChildContainer,
 ): void {
@@ -59,7 +59,7 @@ function formatAssistantText(text: string): string {
 
 export function handleToolStart(
   event: Extract<AgentEvent, { type: "tool_start" }>,
-  state: LoopTUIState,
+  state: RunViewState,
   requestRender: () => void,
   containerForEvent: (parentToolUseId: string | null) => ChildContainer,
 ): void {
@@ -86,7 +86,7 @@ export function handleToolStart(
 
 export function handleTaskStarted(
   event: Extract<AgentEvent, { type: "task_started" }>,
-  state: LoopTUIState,
+  state: RunViewState,
   requestRender: () => void,
   currentContainer: () => ChildContainer,
 ): void {
@@ -104,7 +104,7 @@ export function handleTaskStarted(
 
 export function handleTaskDone(
   event: Extract<AgentEvent, { type: "task_done" }>,
-  state: LoopTUIState,
+  state: RunViewState,
   requestRender: () => void,
   currentContainer: () => ChildContainer,
 ): void {

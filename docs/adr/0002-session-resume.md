@@ -12,7 +12,7 @@ A session has one logical directory across attempts. Writers acquire an exclusiv
 
 Agent iterations remain one-shot child processes. Resume starts a fresh process and never depends on a long-lived agent RPC session. The session executor owns child shutdown, event finalization, lock release, and terminal cleanup. Ctrl-C requests graceful shutdown through that owner instead of exiting from an input component.
 
-The terminal UI is intended to use one application lifecycle for live runs and session navigation.
+The terminal UI is intended to use one application lifecycle for live runs and session navigation. This sentence is superseded by [ADR 0003](0003-terminal-presentation.md), which gives inline live rendering and session browsing separate terminal lifecycles.
 
 ## Consequences
 

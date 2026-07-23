@@ -19,6 +19,7 @@
     "check": "sh scripts/check.sh",
     "check:biome": "biome check --write --unsafe . --error-on-warnings --max-diagnostics=50",
     "check:types": "tsc --noEmit --pretty",
+    "check:deps": "depcruise src --config .dependency-cruiser.cjs",
     "check:test": "bun test --reporter=dots --bail --path-ignore-patterns='*.integration.*'",
     "test:integration": "bun test --bail 'integration'",
     "check:knip": "knip --no-config-hints",
@@ -42,6 +43,7 @@
     "@types/bun": "^1.3.11",
     "@types/node": "^22.0.0",
     "@types/proper-lockfile": "^4.1.4",
+    "dependency-cruiser": "^18.1.0",
     "knip": "^5.0.0",
     "typescript": "^5.7.0"
   }

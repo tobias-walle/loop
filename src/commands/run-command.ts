@@ -2,13 +2,28 @@ import { ConfigError, type LoopRuntimeConfig, loadLoopConfig } from "../lib/conf
 import { RecipeError, loadRecipe } from "../lib/recipes/index.js";
 import { loadTemplate } from "../lib/template.js";
 import type { LoopConfig } from "../lib/types.js";
+import type { RunOutput } from "../output/run-reporter.js";
 import { executeSession } from "./execute-session.js";
+import { createRunReporter } from "./run-reporter.js";
 
 export interface RunCommandIO {
+  stdout: RunOutput;
+  signal?: AbortSignal;
   writeError(message: string): void;
 }
 
-export async function runCommand(initialConfig: LoopConfig, io: RunCommandIO): Promise<number> {
+type RunCommandDependencies = {
+  createRunReporter: typeof createRunReporter;
+  executeSession: typeof executeSession;
+};
+
+const defaultDependencies: RunCommandDependencies = { createRunReporter, executeSession };
+
+export async function runCommand(
+  initialConfig: LoopConfig,
+  io: RunCommandIO,
+  dependencies: RunCommandDependencies = defaultDependencies,
+): Promise<number> {
   let config = initialConfig;
   let loadedRecipe: ReturnType<typeof loadRecipe> | undefined;
 
@@ -42,11 +57,14 @@ export async function runCommand(initialConfig: LoopConfig, io: RunCommandIO): P
   }
 
   const projectRoot = process.cwd();
-  return executeSession({
+  await using reporter = dependencies.createRunReporter(io.stdout);
+  return await dependencies.executeSession({
     config,
     runtimeConfig,
     template: loadTemplate(projectRoot),
     loadedRecipe,
     projectRoot,
+    reporter,
+    signal: io.signal,
   });
 }

@@ -9,7 +9,7 @@ import {
   isStep,
   isStepResult,
   isTokenUsage,
-} from "./session-events.js";
+} from "./session-event.js";
 import type { RunSummary, TokenUsage } from "./types.js";
 
 export type SessionStatus = "running" | "completed" | "failed" | "aborted" | "legacy" | "corrupt";

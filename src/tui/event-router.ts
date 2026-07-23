@@ -4,7 +4,7 @@ import type { AgentArgs } from "../lib/agent-args.js";
 import { dim } from "../lib/ansi.js";
 import type { RunSummary, TokenUsage } from "../lib/types.js";
 import { appendRunBoundary } from "./components/run-boundary.js";
-import type { ChildContainer, LoopTUIState } from "./event-handlers.js";
+import type { ChildContainer, RunViewState } from "./event-handlers.js";
 import {
   ROOT_KEY,
   handleTaskDone,
@@ -22,7 +22,7 @@ import {
 } from "./formatters.js";
 import { createThinkingIndicators } from "./thinking-indicators.js";
 
-export type { ChildContainer, LoopTUIState } from "./event-handlers.js";
+export type { ChildContainer, RunViewState } from "./event-handlers.js";
 
 type ShowStepHeader = (
   step: number,
@@ -39,7 +39,7 @@ export function createEventRouter(
   root: Container,
   requestRender: () => void,
 ): {
-  state: LoopTUIState;
+  state: RunViewState;
   handleEvent: (event: AgentEvent, stepIndex: number) => void;
   finishActiveSession: () => void;
   showInterruption: () => void;
@@ -54,7 +54,7 @@ export function createEventRouter(
   showSessionInfo: (sessionId: string) => void;
   showRunSummary: (summary: RunSummary) => void;
 } {
-  const state: LoopTUIState = {
+  const state: RunViewState = {
     containerStack: [root],
     toolIdToContainer: new Map(),
     toolIdToParentContainer: new Map(),
@@ -128,8 +128,16 @@ export function createEventRouter(
         handleTextDelta(event, state, requestRender, containerForEvent);
         break;
       case "text_done": {
-        state.textBlocks.delete(event.parentToolUseId ?? ROOT_KEY);
         const key = event.parentToolUseId ?? ROOT_KEY;
+        if (!state.textBlocks.has(key) && event.text) {
+          handleTextDelta(
+            { type: "text_delta", text: event.text, parentToolUseId: event.parentToolUseId },
+            state,
+            requestRender,
+            containerForEvent,
+          );
+        }
+        state.textBlocks.delete(key);
         const container = containerForEvent(event.parentToolUseId);
         thinking.add(key, container, "thinking");
         break;

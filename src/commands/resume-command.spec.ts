@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { StoredInvocation } from "../lib/session-events.js";
-import { buildResumeRuntimeConfig } from "./resume-command.js";
+import type { StoredInvocation } from "../lib/session-event.js";
+import { buildResumeRuntimeConfig, resumeCommand } from "./resume-command.js";
 
 const invocation: StoredInvocation = {
   sessionId: "id",
@@ -16,6 +16,28 @@ const invocation: StoredInvocation = {
     passthroughArgs: ["--thinking", "high"],
   },
 };
+
+describe("resumeCommand", () => {
+  test("does not execute a session when the browser exits", async () => {
+    let executions = 0;
+    const result = await resumeCommand(
+      {
+        stdout: { isTTY: false, write() {} },
+        writeError() {},
+      },
+      {
+        browseSessions: async () => ({ type: "exit", exitCode: 7 }),
+        executeSession: async () => {
+          executions++;
+          return 0;
+        },
+      },
+    );
+
+    expect(result).toBe(7);
+    expect(executions).toBe(0);
+  });
+});
 
 describe("buildResumeRuntimeConfig", () => {
   test("restores persisted agent settings while retaining current environment", () => {
