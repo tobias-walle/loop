@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { parse } from "yaml";
 import type { Step } from "../types.js";
 import { resolveRecipeArguments } from "./arguments.js";
-import { RecipeError, formatRecipeZodError } from "./errors.js";
+import { formatRecipeZodError, RecipeError } from "./errors.js";
 import { findRecipePath, getUserRecipePath } from "./paths.js";
 import { type RecipeArgumentValues, renderRecipeSteps } from "./render.js";
 import { type RecipeFile, recipeFileSchema, recipeNameSchema } from "./schema.js";

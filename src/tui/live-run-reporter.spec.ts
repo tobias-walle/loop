@@ -47,8 +47,12 @@ function sessionCreated(): SessionEvent {
   });
 }
 
-async function rendered(): Promise<void> {
-  await Bun.sleep(0);
+async function rendered(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 250;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("TUI did not render within 250ms");
+    await Bun.sleep(1);
+  }
 }
 
 function plain(text: string): string {
@@ -77,7 +81,7 @@ describe("live run reporter", () => {
     reporter.report(
       agent("delta", { type: "text_delta", text: "streamed now", parentToolUseId: null }),
     );
-    await rendered();
+    await rendered(() => output.text.includes("streamed now"));
 
     expect(output.text).toContain("[step 01/01 · pi]");
     expect(output.text).toContain("Work");
@@ -100,7 +104,7 @@ describe("live run reporter", () => {
     reporter.report(
       event("iteration", "step_iteration_started", { stepIndex: 0, iteration: 1, max: 3 }),
     );
-    await rendered();
+    await rendered(() => output.text.includes("waiting"));
     expect(output.text).toContain("[step 01/01 · iter 01/03 · pi]");
     expect(output.text).toContain("waiting");
 
@@ -126,7 +130,7 @@ describe("live run reporter", () => {
       }),
     );
     reporter.report(event("run", "run_completed", {}));
-    await rendered();
+    await rendered(() => plain(output.text).includes("✓ loop"));
 
     const renderedText = plain(output.text);
     expect(renderedText).toContain("✓ done");
@@ -152,7 +156,7 @@ describe("live run reporter", () => {
         },
       }),
     );
-    await rendered();
+    await rendered(() => plain(output.text).includes("$0.25"));
 
     expect(plain(output.text)).toContain("$0.25");
     expect(plain(output.text)).not.toContain("$0.50");

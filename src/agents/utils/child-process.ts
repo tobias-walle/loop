@@ -37,7 +37,7 @@ export function spawnChildProcess(
   });
   // Execa waits for stdio to close. A detached descendant can retain those
   // descriptors after this process exits, so close them at the actual exit.
-  subprocess.once("exit", () => {
+  subprocess.nodeChildProcess.once("exit", () => {
     subprocess.stdout?.destroy();
     subprocess.stderr?.destroy();
   });
@@ -55,7 +55,9 @@ export function spawnChildProcess(
     pid: subprocess.pid,
     stdout: subprocess.stdout,
     result,
-    isRunning: () => subprocess.exitCode == null && subprocess.signalCode == null,
+    isRunning: () =>
+      subprocess.nodeChildProcess.exitCode == null &&
+      subprocess.nodeChildProcess.signalCode == null,
     abort: () => {
       subprocess.kill();
     },

@@ -1,7 +1,7 @@
 import { type Component, Text } from "@mariozechner/pi-tui";
 import type { AgentEvent } from "../agents/types.js";
 import { dim } from "../lib/ansi.js";
-import { PipeBox, nextAgentColor } from "./components/pipe-box.js";
+import { nextAgentColor, PipeBox } from "./components/pipe-box.js";
 import { formatTokenCount, formatToolLine } from "./formatters.js";
 
 /** Key used for the root-level context in maps keyed by parentToolUseId. */

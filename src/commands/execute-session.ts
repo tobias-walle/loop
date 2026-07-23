@@ -5,16 +5,16 @@ import type { LoopRuntimeConfig } from "../lib/config/index.js";
 import { createLogger } from "../lib/logging.js";
 import type { loadRecipe } from "../lib/recipes/index.js";
 import { createRunner } from "../lib/runner.js";
+import { createResumableSession } from "../lib/session.js";
+import { createEvent, type SessionEvent, type SessionEventType } from "../lib/session-event.js";
 import { appendSessionEvent } from "../lib/session-event-store.js";
-import { type SessionEvent, type SessionEventType, createEvent } from "../lib/session-event.js";
 import {
   acquireSessionLock,
   releaseSessionLock,
   startLockHeartbeat,
   startSessionLockMonitor,
 } from "../lib/session-lock.js";
-import { type SessionRecord, loadSession, writeSessionProjection } from "../lib/session-store.js";
-import { createResumableSession } from "../lib/session.js";
+import { loadSession, type SessionRecord, writeSessionProjection } from "../lib/session-store.js";
 import type { loadTemplate } from "../lib/template.js";
 import type { LoopConfig, Step } from "../lib/types.js";
 import type { RunReporter } from "../output/run-reporter.js";

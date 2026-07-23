@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Component, TUI, Terminal } from "@mariozechner/pi-tui";
+import type { Component, Terminal, TUI } from "@mariozechner/pi-tui";
 import type { SessionOverview } from "../../lib/session-store.js";
 import type { TerminalSession } from "../terminal-session.js";
 import { browseSessions } from "./index.js";

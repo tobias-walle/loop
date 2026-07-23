@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type StoredInvocation, createEvent } from "./session-event.js";
+import { createEvent, type StoredInvocation } from "./session-event.js";
 import { reduceSessionEvents } from "./session-reducer";
 
 const invocation: StoredInvocation = {

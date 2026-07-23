@@ -2,8 +2,8 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { appendSessionEvent, readSessionEvents } from "./session-event-store.js";
 import { createEvent } from "./session-event.js";
+import { appendSessionEvent, readSessionEvents } from "./session-event-store.js";
 import { getSessionEventsPath } from "./storage-paths";
 
 const temporaryDirs: string[] = [];

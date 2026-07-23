@@ -1,9 +1,9 @@
 import { type Component, Key, matchesKey } from "@mariozechner/pi-tui";
 import type { SessionHistory, SessionOverview } from "../../lib/session-store.js";
 import {
+  openTerminalSession,
   type TerminalSession,
   type TerminalSessionOptions,
-  openTerminalSession,
 } from "../terminal-session.js";
 import {
   type BrowserAction,
@@ -17,7 +17,7 @@ import {
 } from "./model.js";
 import { renderBrowser, stabilizeBrowserViewport } from "./view.js";
 
-export type { BrowserResult, SessionBrowserDetail } from "./model.js";
+export type { BrowserResult } from "./model.js";
 
 export type BrowseSessionsOptions = {
   sessions: SessionOverview[];

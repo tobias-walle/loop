@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentEvent } from "../agents/types.js";
 import type { SessionEvent, SessionEventType } from "../lib/session-event.js";
-import { type RunOutput, createConsoleRunReporter } from "./console-run-reporter.js";
+import { createConsoleRunReporter, type RunOutput } from "./console-run-reporter.js";
 
 function event<T extends Record<string, unknown>>(
   id: string,

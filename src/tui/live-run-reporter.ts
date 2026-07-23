@@ -3,7 +3,7 @@ import type { SessionEvent } from "../lib/session-event.js";
 import { StatusBar } from "./components/status-bar.js";
 import { openInlineTerminalSession } from "./inline-terminal-session.js";
 import { RunEventProjector } from "./run-event-projector.js";
-import { type LiveRunOutput, containLiveOutput } from "./safe-live-output.js";
+import { containLiveOutput, type LiveRunOutput } from "./safe-live-output.js";
 
 const ANIMATION_INTERVAL_MS = 120;
 
@@ -83,7 +83,7 @@ class TuiLiveRunReporter implements LiveRunReporter {
     this.animation.clearInterval(this.animationHandle);
     this.projector.finishActiveSession();
     this.statusBar.hide();
-    this.session.tui.requestRender();
+    this.session.tui.requestRender(true);
     return true;
   }
 }

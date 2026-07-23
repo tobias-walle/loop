@@ -6,11 +6,11 @@ import type { RunSummary, TokenUsage } from "../lib/types.js";
 import { appendRunBoundary } from "./components/run-boundary.js";
 import type { ChildContainer, RunViewState } from "./event-handlers.js";
 import {
-  ROOT_KEY,
   handleTaskDone,
   handleTaskStarted,
   handleTextDelta,
   handleToolStart,
+  ROOT_KEY,
 } from "./event-handlers.js";
 import {
   formatCompletion,
@@ -22,7 +22,7 @@ import {
 } from "./formatters.js";
 import { createThinkingIndicators } from "./thinking-indicators.js";
 
-export type { ChildContainer, RunViewState } from "./event-handlers.js";
+export type { RunViewState } from "./event-handlers.js";
 
 type ShowStepHeader = (
   step: number,

@@ -1,8 +1,8 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { createEvent, type SessionEvent, type StoredInvocation } from "./session-event.js";
 import { appendSessionEvent } from "./session-event-store.js";
-import { type SessionEvent, type StoredInvocation, createEvent } from "./session-event.js";
 import { reduceSessionEvents } from "./session-reducer.js";
 import { writeSessionProjection } from "./session-store.js";
 import { getSessionMetadataPath, getSessionsDir } from "./storage-paths.js";

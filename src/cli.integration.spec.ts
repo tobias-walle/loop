@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { appendSessionEvent, readSessionEvents } from "./lib/session-event-store.js";
-import { createEvent } from "./lib/session-event.js";
 import { createResumableSession } from "./lib/session.js";
+import { createEvent } from "./lib/session-event.js";
+import { appendSessionEvent, readSessionEvents } from "./lib/session-event-store.js";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..");
 const temporaryDirs: string[] = [];

@@ -1,7 +1,7 @@
 export { ConfigError } from "./errors.js";
-export { findProjectConfigPath, getUserConfigPath } from "./paths.js";
+export type { LoadConfigOptions, LoadedConfig } from "./loader.js";
 export { loadLoopConfig, readConfigFile } from "./loader.js";
-export type { LoadedConfig, LoadConfigOptions } from "./loader.js";
+export { findProjectConfigPath, getUserConfigPath } from "./paths.js";
 export type {
   AgentConfig,
   AgentName,
@@ -9,4 +9,3 @@ export type {
   LoopConfigFile,
   LoopRuntimeConfig,
 } from "./schema.js";
-export { DEFAULT_RUNTIME_CONFIG } from "./schema.js";

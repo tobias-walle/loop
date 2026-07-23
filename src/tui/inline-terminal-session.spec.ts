@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { TUI, Terminal } from "@mariozechner/pi-tui";
+import type { Terminal, TUI } from "@mariozechner/pi-tui";
 import {
   ENTER_ALT_SCREEN,
   ERASE_SCROLLBACK,
@@ -88,9 +88,13 @@ describe("inline terminal session", () => {
 
     output.resizeListeners.values().next().value?.();
     session.terminal.write(`before${ERASE_SCROLLBACK}${QUERY_CELL_SIZE}after`);
+    const outputBeforeProgress = output.text;
+    session.terminal.setProgress(true);
+    session.terminal.setProgress(false);
 
     expect(calls).toContain("resize");
     expect(output.text).toContain("beforeafter");
+    expect(output.text.length).toBeGreaterThan(outputBeforeProgress.length);
     expect(output.text).not.toContain(ERASE_SCROLLBACK);
     expect(output.text).not.toContain(QUERY_CELL_SIZE);
   });

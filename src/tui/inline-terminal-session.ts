@@ -1,13 +1,14 @@
-import { TUI, type Terminal } from "@mariozechner/pi-tui";
+import { type Terminal, TUI } from "@mariozechner/pi-tui";
 import {
   CLEAR_FROM_CURSOR,
   CLEAR_LINE,
   CLEAR_SCREEN,
   ERASE_SCROLLBACK,
   HIDE_CURSOR,
+  moveCursorBy,
   QUERY_CELL_SIZE,
   SHOW_CURSOR,
-  moveCursorBy,
+  setTerminalProgress,
   setTerminalTitle,
 } from "../lib/ansi.js";
 
@@ -100,6 +101,10 @@ class InlineTerminal implements Terminal {
 
   setTitle(title: string): void {
     this.write(setTerminalTitle(title));
+  }
+
+  setProgress(active: boolean): void {
+    this.write(setTerminalProgress(active));
   }
 }
 

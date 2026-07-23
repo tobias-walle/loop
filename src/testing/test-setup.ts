@@ -1,8 +1,8 @@
 import type { Scenario } from "../agents/stub.js";
 import { createStubAdapter } from "../agents/stub.js";
 import type { AgentEvent, AgentSession } from "../agents/types.js";
-import { createRunner } from "../lib/runner.js";
 import type { Runner } from "../lib/runner.js";
+import { createRunner } from "../lib/runner.js";
 import type { RunResult, Step } from "../lib/types.js";
 
 /**

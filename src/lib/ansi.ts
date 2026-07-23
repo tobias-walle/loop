@@ -12,6 +12,12 @@ export const CLEAR_LINE = `${ESC}2K`;
 export const CLEAR_FROM_CURSOR = `${ESC}0J`;
 export const CLEAR_SCREEN = `${ESC}2J${ESC}H`;
 export const QUERY_CELL_SIZE = `${ESC}16t`;
+const TERMINAL_PROGRESS_ACTIVE = "\x1b]9;4;3\x07";
+const TERMINAL_PROGRESS_CLEAR = "\x1b]9;4;0;\x07";
+
+export function setTerminalProgress(active: boolean): string {
+  return active ? TERMINAL_PROGRESS_ACTIVE : TERMINAL_PROGRESS_CLEAR;
+}
 
 export function moveCursorBy(lines: number): string {
   if (lines === 0) return "";

@@ -1,5 +1,5 @@
 import { type Component, truncateToWidth } from "@mariozechner/pi-tui";
-import { RESET, dim, rgbFg } from "../../lib/ansi.js";
+import { dim, RESET, rgbFg } from "../../lib/ansi.js";
 
 /**
  * Muted color palette for subagent pipe brackets.

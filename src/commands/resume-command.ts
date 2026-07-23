@@ -1,13 +1,13 @@
 import type { LoopRuntimeConfig } from "../lib/config/index.js";
 import { ConfigError, loadLoopConfig } from "../lib/config/index.js";
+import { createEvent, type StoredInvocation } from "../lib/session-event.js";
 import { appendSessionEvent } from "../lib/session-event-store.js";
-import { type StoredInvocation, createEvent } from "../lib/session-event.js";
 import { invalidateSessionLock } from "../lib/session-lock.js";
 import {
-  type SessionOverview,
   discoverSessions,
   loadSession,
   loadSessionHistory,
+  type SessionOverview,
 } from "../lib/session-store.js";
 import type { RunOutput } from "../output/run-reporter.js";
 import { browseSessions } from "../tui/session-browser/index.js";

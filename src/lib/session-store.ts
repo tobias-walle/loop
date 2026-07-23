@@ -2,10 +2,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { readLegacyHistory, toLegacyOverview } from "./legacy-session.js";
 import { stringField } from "./record-fields.js";
-import { readSessionEvents } from "./session-event-store.js";
 import type { SessionEvent, StoredInvocation } from "./session-event.js";
+import { readSessionEvents } from "./session-event-store.js";
 import { type LockInfo, readSessionLock } from "./session-lock.js";
-import { type SessionAggregate, reduceSessionEvents } from "./session-reducer.js";
+import { reduceSessionEvents, type SessionAggregate } from "./session-reducer.js";
 import {
   getLegacyProjectSessionsDir,
   getLegacySessionEventsPath,

@@ -2,13 +2,13 @@ import type { AgentEvent } from "../agents/types.js";
 import { nonNegativeIntegerField } from "./record-fields.js";
 import {
   type CompletedStep,
-  type SessionEvent,
-  type StoredInvocation,
-  type UsageSnapshot,
   emptyRunSummary,
   isStep,
   isStepResult,
   isTokenUsage,
+  type SessionEvent,
+  type StoredInvocation,
+  type UsageSnapshot,
 } from "./session-event.js";
 import type { RunSummary, TokenUsage } from "./types.js";
 

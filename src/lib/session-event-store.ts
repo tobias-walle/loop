@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import { yellow } from "./ansi.js";
-import { type SessionEvent, isSessionEvent } from "./session-event.js";
+import { isSessionEvent, type SessionEvent } from "./session-event.js";
 import { getSessionEventsPath } from "./storage-paths.js";
 
 const SESSION_EVENT_WRITE_RETRIES = 3;

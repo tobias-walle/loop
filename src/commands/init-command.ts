@@ -3,8 +3,8 @@ import * as path from "node:path";
 import { cyan, dim, green, yellow } from "../lib/ansi.js";
 import { createDefaultConfigTemplate } from "../lib/config/template.js";
 import {
-  RecipeError,
   createDefaultRecipeTemplate,
+  RecipeError,
   validateRecipeName,
 } from "../lib/recipes/index.js";
 import {

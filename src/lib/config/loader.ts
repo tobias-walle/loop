@@ -1,14 +1,14 @@
 import * as fs from "node:fs";
-import { TomlError, parse } from "smol-toml";
+import { parse, TomlError } from "smol-toml";
 import { ConfigError, formatZodError } from "./errors.js";
 import { applyCliOverrides, applyEnvOverrides, mergeConfigFiles } from "./merge.js";
 import { findProjectConfigPath, getUserConfigPath } from "./paths.js";
 import {
+  agentNameSchema,
   type ConfigCliOverrides,
+  fileConfigSchema,
   type LoopConfigFile,
   type LoopRuntimeConfig,
-  agentNameSchema,
-  fileConfigSchema,
 } from "./schema.js";
 
 export type LoadConfigOptions = {

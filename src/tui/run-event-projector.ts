@@ -1,5 +1,5 @@
 import type { AgentEvent, TokenUsage as AgentTokenUsage } from "../agents/types.js";
-import { type SessionEvent, type StoredInvocation, emptyRunSummary } from "../lib/session-event.js";
+import { emptyRunSummary, type SessionEvent, type StoredInvocation } from "../lib/session-event.js";
 import type { RunSummary, Step, TokenUsage } from "../lib/types.js";
 import type { StatusBar } from "./components/status-bar.js";
 import { createRunView } from "./run-view.js";

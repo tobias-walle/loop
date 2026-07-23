@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type Scenario, createStubAdapter } from "../agents/stub.js";
+import { createStubAdapter, type Scenario } from "../agents/stub.js";
 import { SIMPLE_TEXT } from "../testing/scenarios/basic.js";
 import { RALPH_LOOP_TWO_ITERS } from "../testing/scenarios/loops.js";
 import { createTestRunner, runToCompletion } from "../testing/test-setup.js";

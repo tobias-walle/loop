@@ -1,5 +1,5 @@
+import { createEvent, type SessionEvent } from "./session-event.js";
 import { appendSessionEvent } from "./session-event-store.js";
-import { type SessionEvent, createEvent } from "./session-event.js";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export interface Logger {

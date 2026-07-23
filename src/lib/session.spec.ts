@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createLogger } from "./logging";
-import { createSessionDir, getProjectSlug, updateSessionStatus } from "./session";
 import type { SessionMetadata } from "./session";
+import { createSessionDir, getProjectSlug, updateSessionStatus } from "./session";
 import { getSessionEventsPath } from "./storage-paths";
 
 const temporaryDirs: string[] = [];

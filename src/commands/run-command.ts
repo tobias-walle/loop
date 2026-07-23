@@ -1,5 +1,5 @@
 import { ConfigError, type LoopRuntimeConfig, loadLoopConfig } from "../lib/config/index.js";
-import { RecipeError, loadRecipe } from "../lib/recipes/index.js";
+import { loadRecipe, RecipeError } from "../lib/recipes/index.js";
 import { loadTemplate } from "../lib/template.js";
 import type { LoopConfig } from "../lib/types.js";
 import type { RunOutput } from "../output/run-reporter.js";
