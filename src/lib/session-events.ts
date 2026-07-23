@@ -1,6 +1,7 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import type { AgentArgs } from "./agent-args.js";
+import { yellow } from "./ansi.js";
 import { getSessionEventsPath } from "./storage-paths.js";
 import type { RunSummary, Step, StepResult, TokenUsage } from "./types.js";
 
@@ -83,11 +84,47 @@ export function createEvent<T>(
   };
 }
 
-export function appendSessionEvent(sessionDir: string, event: SessionEvent): void {
-  fs.appendFileSync(getSessionEventsPath(sessionDir), `${JSON.stringify(event)}\n`, {
-    encoding: "utf-8",
-    mode: 0o600,
-  });
+const SESSION_EVENT_WRITE_RETRIES = 3;
+const failedEventPaths = new Set<string>();
+
+export function appendSessionEvent(
+  sessionDir: string,
+  event: SessionEvent,
+  onError: (error: Error) => void = reportSessionEventWriteFailure,
+): boolean {
+  const file = getSessionEventsPath(sessionDir);
+  let cause: unknown;
+  for (let attempt = 0; attempt <= SESSION_EVENT_WRITE_RETRIES; attempt++) {
+    try {
+      fs.appendFileSync(file, `${JSON.stringify(event)}\n`, {
+        encoding: "utf-8",
+        mode: 0o600,
+      });
+      failedEventPaths.delete(file);
+      return true;
+    } catch (error) {
+      cause = error;
+    }
+  }
+
+  if (!failedEventPaths.has(file)) {
+    failedEventPaths.add(file);
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    try {
+      onError(
+        new Error(
+          `Could not append session events to ${file} after ${SESSION_EVENT_WRITE_RETRIES} retries: ${detail}. The run will continue without recording this event.`,
+        ),
+      );
+    } catch {
+      // Reporting a persistence failure must not stop the active run either.
+    }
+  }
+  return false;
+}
+
+function reportSessionEventWriteFailure(error: Error): void {
+  process.stderr.write(`${yellow("Warning:")} ${error.message}\n`);
 }
 
 export type ReadEventsResult = {

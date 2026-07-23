@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -32,6 +32,45 @@ describe("session events", () => {
       unsupportedVersion: false,
     });
     expect(fs.statSync(getSessionEventsPath(dir)).mode & 0o777).toBe(0o600);
+  });
+
+  test("retries three failed writes before succeeding", () => {
+    const dir = sessionDir();
+    let attempts = 0;
+    const append = spyOn(fs, "appendFileSync").mockImplementation(() => {
+      attempts++;
+      if (attempts <= 3) throw new Error("temporary mount failure");
+    });
+    const errors: string[] = [];
+
+    try {
+      expect(
+        appendSessionEvent(dir, createEvent("attempt_started", {}), (error) => {
+          errors.push(error.message);
+        }),
+      ).toBe(true);
+    } finally {
+      append.mockRestore();
+    }
+
+    expect(attempts).toBe(4);
+    expect(errors).toEqual([]);
+  });
+
+  test("reports event write failures without throwing or repeating the warning", () => {
+    const dir = sessionDir();
+    const eventsPath = getSessionEventsPath(dir);
+    fs.mkdirSync(eventsPath);
+    const errors: string[] = [];
+    const onError = (error: Error): void => {
+      errors.push(error.message);
+    };
+
+    expect(appendSessionEvent(dir, createEvent("attempt_started", {}), onError)).toBe(false);
+    expect(appendSessionEvent(dir, createEvent("attempt_completed", {}), onError)).toBe(false);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain(eventsPath);
   });
 
   test("ignores an interrupted final append", () => {
