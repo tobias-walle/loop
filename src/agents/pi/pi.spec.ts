@@ -91,6 +91,44 @@ process.stdout.write(JSON.stringify({ type: "agent_settled" }) + "\\n");
     if (done?.type === "done") expect(done.durationMs).toBeGreaterThanOrEqual(10);
   });
 
+  test("allows pi to recover from a failed turn", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
+    const markerPath = path.join(dir, "completed");
+    const scriptPath = path.join(dir, "fake-pi.js");
+    fs.writeFileSync(
+      scriptPath,
+      `import fs from "node:fs";
+process.stdout.write(JSON.stringify({ type: "agent_start" }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "message_end", message: { stopReason: "error", errorMessage: "provider unavailable" } }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "agent_end", willRetry: true }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "auto_retry_start", attempt: 1, maxAttempts: 5, delayMs: 10, errorMessage: "provider unavailable" }) + "\\n");
+await new Promise((resolve) => setTimeout(resolve, 20));
+process.stdout.write(JSON.stringify({ type: "message_end", message: { stopReason: "stop" } }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "agent_end", result: "recovered", usage: { input: 2, output: 1 } }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "agent_settled" }) + "\\n");
+fs.writeFileSync(${JSON.stringify(markerPath)}, "completed");
+`,
+    );
+
+    const session = createPiAdapter({ command: process.execPath, rawArgs: [scriptPath] }).spawn(
+      "hello",
+    );
+    const events = [];
+    for await (const event of session.events) events.push(event);
+    await session.exited;
+
+    expect(events).toContainEqual({
+      type: "retry",
+      attempt: 1,
+      maxRetries: 5,
+      delayMs: 10,
+      error: "provider unavailable",
+    });
+    expect(events.at(-1)).toMatchObject({ type: "done", result: "recovered" });
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(fs.readFileSync(markerPath, "utf-8")).toBe("completed");
+  });
+
   test("reports stderr when the process fails after a completion event", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
     const scriptPath = path.join(dir, "fake-pi.js");
@@ -358,7 +396,13 @@ describe("pi event mapping", () => {
   test("maps retry events", () => {
     expect(
       mapPiEvent(
-        { type: "auto_retry_start", attempt: 2, maxRetries: 5, delayMs: 1000, error: "rate" },
+        {
+          type: "auto_retry_start",
+          attempt: 2,
+          maxAttempts: 5,
+          delayMs: 1000,
+          errorMessage: "rate",
+        },
         createPiEventState(),
       ),
     ).toEqual([{ type: "retry", attempt: 2, maxRetries: 5, delayMs: 1000, error: "rate" }]);
@@ -427,6 +471,13 @@ describe("pi event mapping", () => {
     expect(mapPiEvent({ type: "extension_error", message: "bad" }, createPiEventState())).toEqual([
       { type: "error", message: "bad" },
     ]);
+    expect(mapPiEvent({ type: "something_else" }, createPiEventState())).toEqual([
+      { type: "unknown", eventType: "something_else", raw: { type: "something_else" } },
+    ]);
+  });
+
+  test("only makes an unresolved turn error terminal when the agent settles", () => {
+    const state = createPiEventState();
     expect(
       mapPiEvent(
         {
@@ -441,26 +492,16 @@ describe("pi event mapping", () => {
             diagnostics: [{ message: "upstream 429" }],
           },
         },
-        createPiEventState(),
+        state,
       ),
-    ).toEqual([
+    ).toEqual([]);
+    expect(mapPiEvent({ type: "agent_end" }, state)).toEqual([]);
+    expect(mapPiEvent({ type: "agent_settled" }, state)).toEqual([
       {
         type: "error",
         message:
           "pi assistant message ended with error: Subagent failed: rate limit · anthropic/claude-sonnet/msg_123 · diagnostics: upstream 429",
       },
-    ]);
-    expect(
-      mapPiEvent({ type: "message_end", message: { stopReason: "error" } }, createPiEventState()),
-    ).toEqual([
-      {
-        type: "error",
-        message:
-          'pi assistant message ended with error: raw: {"type":"message_end","message":{"stopReason":"error"}}',
-      },
-    ]);
-    expect(mapPiEvent({ type: "something_else" }, createPiEventState())).toEqual([
-      { type: "unknown", eventType: "something_else", raw: { type: "something_else" } },
     ]);
   });
 });

@@ -23,7 +23,7 @@
     "check:biome": "biome check --write --unsafe . --error-on-warnings --max-diagnostics=50",
     "check:types": "tsc --noEmit --pretty",
     "check:deps": "depcruise src --config .dependency-cruiser.cjs",
-    "check:test": "bun test --reporter=dots --bail --path-ignore-patterns='*.integration.*'",
+    "check:test": "bun test --reporter=dots --bail",
     "test:integration": "bun test --bail 'integration'",
     "check:knip": "knip --no-config-hints",
     "lint": "biome lint .",

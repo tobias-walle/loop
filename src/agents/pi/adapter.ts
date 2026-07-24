@@ -6,7 +6,7 @@ import {
   childProcessFailure,
   spawnChildProcess,
 } from "../utils/child-process.js";
-import { completePendingDone, createPiEventState, mapPiEvent } from "./events.js";
+import { completePendingSession, createPiEventState, mapPiEvent } from "./events.js";
 import { readJsonLines } from "./json.js";
 
 const PROCESS_NAME = "pi JSON process";
@@ -95,7 +95,8 @@ async function* streamPiEvents(
     yield { type: "error", message: error instanceof Error ? error.message : String(error) };
     return;
   }
-  if (state.pendingDone) yield withMeasuredDuration(completePendingDone(state), startedAt);
+  if (state.pendingDone || state.pendingTurnError)
+    yield withMeasuredDuration(completePendingSession(state), startedAt);
 }
 
 async function* streamPiSession(

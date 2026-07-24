@@ -22,6 +22,7 @@ export type PiEventState = {
   cumulativeCostUsd: number;
   cumulativeUsage: TokenUsage;
   pendingDone?: PendingPiDone;
+  pendingTurnError?: string;
 };
 
 type PendingPiDone = {
@@ -66,9 +67,12 @@ export function mapPiEvent(raw: unknown, state: PiEventState): AgentEvent[] {
       return mapMessageStart(raw, state);
     case "response":
       if (isSessionStatsResponse(raw)) {
-        if (state.pendingDone && isFinalStatsResponse(raw)) {
+        if ((state.pendingDone || state.pendingTurnError) && isFinalStatsResponse(raw)) {
           return [
-            completePendingDone(state, raw.success === true ? recordAt(raw, ["data"]) : undefined),
+            completePendingSession(
+              state,
+              raw.success === true ? recordAt(raw, ["data"]) : undefined,
+            ),
           ];
         }
         if (raw.success === true) return mapUsageUpdate(raw);
@@ -104,21 +108,27 @@ export function mapPiEvent(raw: unknown, state: PiEventState): AgentEvent[] {
         {
           type: "retry",
           attempt: numberAt(raw, ["attempt"]) ?? 0,
-          maxRetries: numberAt(raw, ["maxRetries"]) ?? numberAt(raw, ["max_retries"]) ?? 0,
+          maxRetries:
+            numberAt(raw, ["maxAttempts"]) ??
+            numberAt(raw, ["maxRetries"]) ??
+            numberAt(raw, ["max_retries"]) ??
+            0,
           delayMs: numberAt(raw, ["delayMs"]) ?? numberAt(raw, ["delay_ms"]) ?? 0,
-          error: stringAt(raw, ["error"]) ?? "retrying",
+          error: stringAt(raw, ["errorMessage"]) ?? stringAt(raw, ["error"]) ?? "retrying",
         },
       ];
     case "message_end": {
       const stopReason =
         stringAt(raw, ["assistant", "stopReason"]) ?? stringAt(raw, ["message", "stopReason"]);
-      if (stopReason === "error") return [{ type: "error", message: formatMessageEndError(raw) }];
+      // Pi decides whether to retry after message_end, so defer failures until the agent settles.
+      if (stopReason === "error") state.pendingTurnError = formatMessageEndError(raw);
+      else state.pendingTurnError = undefined;
       return [];
     }
     case "turn_end":
       return mapTurnEnd(raw, state);
     case "agent_settled":
-      return state.pendingDone ? [completePendingDone(state)] : [];
+      return state.pendingDone || state.pendingTurnError ? [completePendingSession(state)] : [];
     case "turn_start":
     case "queue_update":
     case "compaction_start":
@@ -172,6 +182,19 @@ function mapMessageUpdate(raw: Record<string, unknown>, state: PiEventState): Ag
     return [{ type: "text_done", text, parentToolUseId: null }];
   }
   return [];
+}
+
+export function completePendingSession(
+  state: PiEventState,
+  stats?: Record<string, unknown>,
+): AgentEvent {
+  if (state.pendingTurnError) {
+    const message = state.pendingTurnError;
+    state.pendingTurnError = undefined;
+    state.pendingDone = undefined;
+    return { type: "error", message };
+  }
+  return completePendingDone(state, stats);
 }
 
 export function completePendingDone(
