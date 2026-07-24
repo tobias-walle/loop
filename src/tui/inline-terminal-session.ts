@@ -34,11 +34,18 @@ export interface InlineTerminalSessionOptions {
 export interface InlineTerminalSession extends Disposable {
   readonly tui: TUI;
   readonly terminal: Terminal;
+  flushRender(): Promise<void>;
 }
+
+type WriteBarrier = {
+  promise: Promise<void>;
+  cancel(): void;
+};
 
 class InlineTerminal implements Terminal {
   private resizeCallback?: () => void;
   private started = false;
+  private readonly writeWaiters = new Set<() => void>();
   private readonly onResize = (): void => this.resizeCallback?.();
 
   constructor(private readonly output: InlineTerminalOutput) {}
@@ -67,12 +74,35 @@ class InlineTerminal implements Terminal {
     this.started = false;
     this.output.off?.("resize", this.onResize);
     this.resizeCallback = undefined;
+    this.resolveWriteWaiters();
   }
 
   async drainInput(): Promise<void> {}
 
   write(data: string): void {
-    this.output.write(data.split(ERASE_SCROLLBACK).join("").split(QUERY_CELL_SIZE).join(""));
+    try {
+      this.output.write(data.split(ERASE_SCROLLBACK).join("").split(QUERY_CELL_SIZE).join(""));
+    } finally {
+      this.resolveWriteWaiters();
+    }
+  }
+
+  createWriteBarrier(): WriteBarrier {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    this.writeWaiters.add(resolve);
+    return {
+      promise,
+      cancel: () => this.writeWaiters.delete(resolve),
+    };
+  }
+
+  private resolveWriteWaiters(): void {
+    const waiters = [...this.writeWaiters];
+    this.writeWaiters.clear();
+    for (const resolve of waiters) resolve();
   }
 
   moveBy(lines: number): void {
@@ -114,7 +144,7 @@ class OwnedInlineTerminalSession implements InlineTerminalSession {
   private readonly monitor = (): void => this.dispose();
 
   constructor(
-    readonly terminal: Terminal,
+    readonly terminal: InlineTerminal,
     readonly tui: TUI,
     private readonly processEvents: ProcessEvents,
   ) {}
@@ -126,6 +156,17 @@ class OwnedInlineTerminalSession implements InlineTerminalSession {
       this.started = true;
     } catch (error) {
       this.dispose();
+      throw error;
+    }
+  }
+
+  async flushRender(): Promise<void> {
+    const barrier = this.terminal.createWriteBarrier();
+    try {
+      this.tui.requestRender();
+      await barrier.promise;
+    } catch (error) {
+      barrier.cancel();
       throw error;
     }
   }

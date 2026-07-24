@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Container } from "@mariozechner/pi-tui";
+import { Container, visibleWidth } from "@mariozechner/pi-tui";
 import { createStubAdapter } from "../agents/stub.js";
 import { PARALLEL_SUBAGENTS } from "../testing/scenarios/tools.js";
 import { PipeBox } from "./components/pipe-box.js";
@@ -103,6 +103,26 @@ describe("createEventRouter", () => {
     expect(rendered).toContain("src/index.ts");
   });
 
+  test("tool activity stays on one row at narrow widths", () => {
+    const { root, router } = setup();
+
+    router.handleEvent(
+      {
+        type: "tool_start",
+        toolId: "t1",
+        tool: "Bash",
+        input: { command: "git diff --stat\ngit diff --check && git status --short" },
+        parentToolUseId: null,
+      },
+      0,
+    );
+
+    const lines = root.children[0].render(24);
+    expect(lines).toHaveLength(1);
+    expect(visibleWidth(lines[0])).toBeLessThanOrEqual(24);
+    expect(stripAnsi(lines[0])).not.toContain("\n");
+  });
+
   test("task_started is a no-op when tool_start already created the container", () => {
     const { root, router } = setup();
 
@@ -148,9 +168,10 @@ describe("createEventRouter", () => {
       0,
     );
 
-    // Single PipeBox with header
+    // A pending agent stays compact until it emits nested content.
     expect(root.children).toHaveLength(1);
     expect(root.children[0]).toBeInstanceOf(PipeBox);
+    expect(stripAnsi(renderChild(root, 0))).toContain("◈ agent  Review code · running");
     expect(router.state.toolIdToContainer.has("t1")).toBe(true);
   });
 
@@ -179,7 +200,7 @@ describe("createEventRouter", () => {
   test("events with parentToolUseId route to subagent container", () => {
     const { root, router } = setup();
 
-    // task_started creates the PipeBox and adds a thinking indicator inside
+    // task_started creates a compact PipeBox without a nested animated row.
     router.handleEvent(
       {
         type: "task_started",
@@ -192,17 +213,16 @@ describe("createEventRouter", () => {
     );
 
     const subBox = root.children[0] as PipeBox;
-    expect(subBox.children).toHaveLength(1); // thinking indicator
-    expect(subBox.children[0]).toBeInstanceOf(ThinkingIndicator);
+    expect(subBox.children).toHaveLength(0);
+    expect(stripAnsi(renderChild(root, 0))).toContain("◈ agent  Review code · running");
 
-    // text_delta removes the thinking indicator and adds text
+    // Nested content expands the compact row into a pipe.
     router.handleEvent({ type: "text_delta", text: "Reviewing...", parentToolUseId: "t1" }, 0);
-    expect(subBox.children).toHaveLength(1); // text only
+    expect(subBox.children).toHaveLength(1);
 
-    // text_done re-shows thinking indicator
     router.handleEvent({ type: "text_done", text: "Reviewing...", parentToolUseId: "t1" }, 0);
+    expect(subBox.children).toHaveLength(1);
 
-    // tool_start removes thinking and adds tool line
     router.handleEvent(
       {
         type: "tool_start",
@@ -246,13 +266,50 @@ describe("createEventRouter", () => {
     );
     expect(router.state.toolIdToContainer.has("t1")).toBe(false);
 
-    // The └ line is the PipeBox footer, rendered as part of the box
+    // An agent without nested output remains a compact completed row.
     expect(root.children).toHaveLength(1);
     const rendered = renderChild(root, 0);
-    expect(rendered).toContain("└");
+    expect(rendered).toContain("◈");
     expect(rendered).toContain("completed");
     expect(rendered).toContain("Review finished");
     expect(rendered).toContain("3.0s");
+  });
+
+  test("tool_done closes an Agent when no task lifecycle events are emitted", () => {
+    const { root, router } = setup();
+
+    router.handleEvent(
+      {
+        type: "tool_start",
+        toolId: "agent-1",
+        tool: "Agent",
+        input: {
+          description: "Audit changes",
+          model: "profile/medium",
+          run_in_background: true,
+        },
+        parentToolUseId: null,
+      },
+      0,
+    );
+    router.handleEvent(
+      {
+        type: "tool_done",
+        toolId: "agent-1",
+        result: "Background audit started",
+        parentToolUseId: null,
+      },
+      0,
+    );
+
+    const box = root.children[0] as PipeBox;
+    expect(box.children).toHaveLength(0);
+    expect(stripAnsi(renderChild(root, 0))).toContain(
+      "◈ agent  Audit changes · profile/medium · ↗ background",
+    );
+    expect(router.state.toolIdToContainer.has("agent-1")).toBe(false);
+    expect(router.state.toolIdToParentContainer.has("agent-1")).toBe(false);
+    expect(router.state.thinkingIndicators.has("agent-1")).toBe(false);
   });
 
   test("tool_done re-shows thinking indicator", () => {

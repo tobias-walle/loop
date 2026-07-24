@@ -67,6 +67,12 @@ export class PipeBox implements Component {
 
   render(width: number): string[] {
     const c = this.colorize ?? dim;
+    if (this.header != null && this.children.length === 0) {
+      const status = this.footer ?? dim("running");
+      const line = `${c("◈")} ${this.header}${dim(" · ")}${status}`;
+      return [truncateToWidth(line, width, "", true)];
+    }
+
     const pipePrefix = `${c("│")} `;
     const innerWidth = Math.max(1, width - 2);
     const lines: string[] = [];

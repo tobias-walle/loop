@@ -3,6 +3,7 @@ import type { AgentEvent } from "../agents/types.js";
 import type { AgentArgs } from "../lib/agent-args.js";
 import { dim } from "../lib/ansi.js";
 import type { RunSummary, TokenUsage } from "../lib/types.js";
+import { PipeBox } from "./components/pipe-box.js";
 import { appendRunBoundary } from "./components/run-boundary.js";
 import type { ChildContainer, RunViewState } from "./event-handlers.js";
 import {
@@ -58,6 +59,7 @@ export function createEventRouter(
     containerStack: [root],
     toolIdToContainer: new Map(),
     toolIdToParentContainer: new Map(),
+    backgroundAgentToolIds: new Set(),
     textBlocks: new Map(),
     thinkingIndicators: new Map(),
   };
@@ -138,24 +140,32 @@ export function createEventRouter(
           );
         }
         state.textBlocks.delete(key);
-        const container = containerForEvent(event.parentToolUseId);
-        thinking.add(key, container, "thinking");
+        if (key === ROOT_KEY) {
+          const container = containerForEvent(event.parentToolUseId);
+          thinking.add(key, container, "thinking");
+        }
         break;
       }
       case "tool_start":
         handleToolStart(event, state, requestRender, containerForEvent);
-        if (event.tool === "Task" || event.tool === "Agent") {
-          const subContainer = state.toolIdToContainer.get(event.toolId);
-          if (subContainer) {
-            thinking.add(event.toolId, subContainer);
-          }
-        }
         break;
       case "tool_done": {
-        state.toolIdToContainer.delete(event.toolId);
+        const subContainer = state.toolIdToContainer.get(event.toolId);
+        if (subContainer instanceof PipeBox) {
+          thinking.remove(event.toolId);
+          const status = state.backgroundAgentToolIds.delete(event.toolId)
+            ? "↗ background"
+            : "✓ done";
+          subContainer.setFooter(dim(status));
+          state.toolIdToContainer.delete(event.toolId);
+          state.toolIdToParentContainer.delete(event.toolId);
+          requestRender();
+        }
         const key = event.parentToolUseId ?? ROOT_KEY;
-        const container = containerForEvent(event.parentToolUseId);
-        thinking.add(key, container);
+        if (key === ROOT_KEY) {
+          const container = containerForEvent(event.parentToolUseId);
+          thinking.add(key, container);
+        }
         break;
       }
       case "retry": {
@@ -172,12 +182,9 @@ export function createEventRouter(
         requestRender();
         break;
       }
-      case "task_started": {
+      case "task_started":
         handleTaskStarted(event, state, requestRender, currentContainer);
-        const subContainer = state.toolIdToContainer.get(event.toolUseId);
-        if (subContainer) thinking.add(event.toolUseId, subContainer);
         break;
-      }
       case "task_done":
         thinking.remove(event.toolUseId);
         handleTaskDone(event, state, requestRender, currentContainer);
@@ -225,6 +232,7 @@ export function createEventRouter(
     state.containerStack.length = 1;
     state.toolIdToContainer.clear();
     state.toolIdToParentContainer.clear();
+    state.backgroundAgentToolIds.clear();
     state.textBlocks.clear();
     thinking.removeAll();
     sessionDone = false;

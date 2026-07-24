@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentEvent } from "../agents/types.js";
-import { ENTER_ALT_SCREEN, ERASE_SCROLLBACK, LEAVE_ALT_SCREEN } from "../lib/ansi.js";
+import { CLEAR_SCREEN, ENTER_ALT_SCREEN, ERASE_SCROLLBACK, LEAVE_ALT_SCREEN } from "../lib/ansi.js";
 import type { SessionEvent, SessionEventType } from "../lib/session-event.js";
 import { createLiveRunReporter } from "./live-run-reporter.js";
 
@@ -14,6 +14,23 @@ function event<T extends Record<string, unknown>>(
 
 function agent(id: string, value: AgentEvent): SessionEvent {
   return event(id, "agent_event", { stepIndex: 0, executionId: "exec", event: value });
+}
+
+class ManualAnimation {
+  private callback: (() => void) | undefined;
+
+  setInterval(callback: () => void): string {
+    this.callback = callback;
+    return "animation";
+  }
+
+  clearInterval(): void {
+    this.callback = undefined;
+  }
+
+  tick(): void {
+    this.callback?.();
+  }
 }
 
 class RecordingOutput {
@@ -139,6 +156,49 @@ describe("live run reporter", () => {
     expect(renderedText).toContain("1.2k tokens");
   });
 
+  test("does not clear the screen when an active agent scrolls above the viewport", async () => {
+    const output = new RecordingOutput();
+    output.rows = 5;
+    const animation = new ManualAnimation();
+    const reporter = createLiveRunReporter(output, { animation });
+    reporter.report(sessionCreated());
+    reporter.report(
+      event("step", "step_started", { stepIndex: 0, step: { type: "task", task: "Work" } }),
+    );
+    reporter.report(event("iteration", "step_iteration_started", { stepIndex: 0, iteration: 1 }));
+    reporter.report(
+      agent("agent-start", {
+        type: "tool_start",
+        toolId: "agent-1",
+        tool: "Agent",
+        input: { description: "Audit changes", model: "profile/medium" },
+        parentToolUseId: null,
+      }),
+    );
+    await rendered(() => plain(output.text).includes("Audit changes"));
+
+    for (let index = 0; index < 8; index++) {
+      reporter.report(
+        agent(`tool-${index}`, {
+          type: "tool_start",
+          toolId: `tool-${index}`,
+          tool: "Read",
+          input: { file_path: `src/file-${index}.ts` },
+          parentToolUseId: null,
+        }),
+      );
+    }
+    await rendered(() => plain(output.text).includes("src/file-7.ts"));
+
+    output.text = "";
+    await Bun.sleep(125);
+    animation.tick();
+    await Bun.sleep(25);
+
+    expect(output.text).not.toContain(CLEAR_SCREEN);
+    reporter[Symbol.dispose]();
+  });
+
   test("does not double-count authoritative usage in the live status", async () => {
     const output = new RecordingOutput();
     using reporter = createLiveRunReporter(output);
@@ -162,7 +222,7 @@ describe("live run reporter", () => {
     expect(plain(output.text)).not.toContain("$0.50");
   });
 
-  test("flushes the final summary before awaited disposal", async () => {
+  test("flushes the final summary before awaited disposal without clearing the screen", async () => {
     const output = new RecordingOutput();
     const reporter = createLiveRunReporter(output);
     reporter.report(sessionCreated());
@@ -171,6 +231,7 @@ describe("live run reporter", () => {
     await reporter[Symbol.asyncDispose]();
 
     expect(plain(output.text)).toContain("✓ loop");
+    expect(output.text).not.toContain(CLEAR_SCREEN);
     expect(output.listeners.size).toBe(0);
   });
 

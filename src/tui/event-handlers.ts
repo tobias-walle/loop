@@ -2,7 +2,8 @@ import { type Component, Text } from "@mariozechner/pi-tui";
 import type { AgentEvent } from "../agents/types.js";
 import { dim } from "../lib/ansi.js";
 import { nextAgentColor, PipeBox } from "./components/pipe-box.js";
-import { formatTokenCount, formatToolLine } from "./formatters.js";
+import { ToolLine } from "./components/tool-line.js";
+import { formatTokenCount } from "./formatters.js";
 
 /** Key used for the root-level context in maps keyed by parentToolUseId. */
 export const ROOT_KEY = "__root__";
@@ -21,6 +22,7 @@ export interface RunViewState {
   containerStack: ChildContainer[];
   toolIdToContainer: Map<string, ChildContainer>;
   toolIdToParentContainer: Map<string, ChildContainer>;
+  backgroundAgentToolIds: Set<string>;
   textBlocks: Map<string, { textRef: Text; accumulated: string }>;
   thinkingIndicators: Map<string, { node: IndicatorNode; parent: ChildContainer }>;
 }
@@ -74,13 +76,15 @@ export function handleToolStart(
     container.addChild(subBox);
     state.toolIdToContainer.set(event.toolId, subBox);
     state.toolIdToParentContainer.set(event.toolId, container);
+    if (event.input?.run_in_background === true) {
+      state.backgroundAgentToolIds.add(event.toolId);
+    }
     requestRender();
     return;
   }
 
   const container = containerForEvent(event.parentToolUseId);
-  const line = formatToolLine(event.tool, event.input);
-  container.addChild(new Text(line, 0, 0));
+  container.addChild(new ToolLine(event.tool, event.input));
   requestRender();
 }
 
@@ -112,6 +116,7 @@ export function handleTaskDone(
   const parent = state.toolIdToParentContainer.get(event.toolUseId) || currentContainer();
   state.toolIdToContainer.delete(event.toolUseId);
   state.toolIdToParentContainer.delete(event.toolUseId);
+  state.backgroundAgentToolIds.delete(event.toolUseId);
   const durationSec = (event.durationMs / 1000).toFixed(1);
   const meta: string[] = [`${durationSec}s`];
   if (event.totalTokens != null) meta.push(`${formatTokenCount(event.totalTokens)} tokens`);

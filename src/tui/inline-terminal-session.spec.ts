@@ -55,6 +55,10 @@ function fakeTui(terminal: Terminal, calls: string[]): TUI {
       terminal.showCursor();
       terminal.stop();
     },
+    requestRender() {
+      calls.push("tui:request-render");
+      queueMicrotask(() => terminal.write("rendered-frame"));
+    },
   } as TUI;
 }
 
@@ -97,6 +101,21 @@ describe("inline terminal session", () => {
     expect(output.text.length).toBeGreaterThan(outputBeforeProgress.length);
     expect(output.text).not.toContain(ERASE_SCROLLBACK);
     expect(output.text).not.toContain(QUERY_CELL_SIZE);
+  });
+
+  test("flushRender resolves after the requested frame is written", async () => {
+    const output = new RecordingOutput();
+    const calls: string[] = [];
+    using session = openInlineTerminalSession({
+      stdout: output,
+      process: new RecordingProcess(),
+      createTui: (terminal) => fakeTui(terminal, calls),
+    });
+
+    await session.flushRender();
+
+    expect(calls).toContain("tui:request-render");
+    expect(output.text).toContain("rendered-frame");
   });
 
   test("disposal restores the terminal and listeners exactly once", () => {

@@ -1,3 +1,4 @@
+import { truncateToWidth } from "@mariozechner/pi-tui";
 import type { AgentArgs } from "../lib/agent-args.js";
 import {
   bold,
@@ -70,7 +71,11 @@ function formatToolEvent(
   const labelText = label.padEnd(TOOL_LABEL_WIDTH);
   const prefixWidth = 2 + labelText.length + 1;
   const payloadWidth = Math.max(0, maxWidth - prefixWidth);
-  return `${colorize(symbol)} ${colorize(labelText)} ${dim(truncate(payload, payloadWidth))}`;
+  const normalizedPayload = payload.replace(/\s+/g, " ").trim();
+  const line = `${colorize(symbol)} ${colorize(labelText)} ${dim(
+    truncateToWidth(normalizedPayload, payloadWidth),
+  )}`;
+  return truncateToWidth(line, maxWidth, "");
 }
 
 function formatStatusLine(
@@ -83,13 +88,6 @@ function formatStatusLine(
   return details
     ? `${colorize(symbol)} ${colorize(labelText)} ${details}`
     : `${colorize(symbol)} ${colorize(labelText)}`;
-}
-
-function truncate(text: string, max: number): string {
-  if (max <= 0) return "";
-  if (max <= 3) return text.slice(0, max);
-  if (text.length <= max) return text;
-  return `${text.slice(0, max - 3)}...`;
 }
 
 function padNumber(value: number, width: number): string {

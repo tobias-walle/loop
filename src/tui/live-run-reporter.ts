@@ -73,8 +73,11 @@ class TuiLiveRunReporter implements LiveRunReporter {
 
   async [Symbol.asyncDispose](): Promise<void> {
     if (!this.prepareDisposal()) return;
-    await new Promise<void>((resolve) => process.nextTick(resolve));
-    this.session[Symbol.dispose]();
+    try {
+      await this.session.flushRender();
+    } finally {
+      this.session[Symbol.dispose]();
+    }
   }
 
   private prepareDisposal(): boolean {
@@ -83,7 +86,6 @@ class TuiLiveRunReporter implements LiveRunReporter {
     this.animation.clearInterval(this.animationHandle);
     this.projector.finishActiveSession();
     this.statusBar.hide();
-    this.session.tui.requestRender(true);
     return true;
   }
 }
