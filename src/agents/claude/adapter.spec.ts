@@ -3,6 +3,8 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { Readable } from "node:stream";
+import type { ChildProcessHandle } from "../utils/child-process";
 import { createClaudeAdapter } from "./adapter";
 
 function writeFakeClaude(): { command: string; argvPath: string } {
@@ -33,6 +35,50 @@ async function collectSession(command: string) {
 }
 
 describe("Claude adapter", () => {
+  test("uses an injected process boundary and forwards abort requests", async () => {
+    const invocations: unknown[] = [];
+    let aborted = false;
+    const process: ChildProcessHandle = {
+      pid: 43,
+      stdout: Readable.from([]),
+      result: Promise.resolve({ exitCode: 0, signal: null, stderr: "" }),
+      isRunning: () => true,
+      abort() {
+        aborted = true;
+      },
+    };
+    const session = createClaudeAdapter({
+      command: "claude-test",
+      env: { PROVIDER: "claude" },
+      spawnProcess(input) {
+        invocations.push(input);
+        return process;
+      },
+    }).spawn("hello", { cwd: "/project", env: { RUN: "1" } });
+
+    session.abort();
+    await session.exited;
+
+    expect(invocations).toEqual([
+      {
+        command: "claude-test",
+        args: [
+          "--print",
+          "--verbose",
+          "--output-format",
+          "stream-json",
+          "--include-partial-messages",
+          "--permission-mode",
+          "auto",
+          "hello",
+        ],
+        cwd: "/project",
+        env: { PROVIDER: "claude", RUN: "1" },
+      },
+    ]);
+    expect(aborted).toBe(true);
+  });
+
   test("uses permission-mode auto by default", async () => {
     const { command, argvPath } = writeFakeClaude();
     const session = createClaudeAdapter({ command }).spawn("hello");

@@ -1,3 +1,4 @@
+import type { SpawnChildProcess } from "../agents/utils/child-process.js";
 import type { LoopRuntimeConfig } from "../lib/config/index.js";
 import { ConfigError, loadLoopConfig } from "../lib/config/index.js";
 import { createEvent, type StoredInvocation } from "../lib/session-event.js";
@@ -10,9 +11,9 @@ import {
   type SessionOverview,
 } from "../lib/session-store.js";
 import type { RunOutput } from "../output/run-reporter.js";
-import { browseSessions } from "../tui/session-browser/index.js";
-import { executeSession } from "./execute-session.js";
-import { createRunReporter } from "./run-reporter.js";
+import type { browseSessions } from "../tui/session-browser/index.js";
+import type { executeSession } from "./execute-session.js";
+import type { createRunReporter } from "./run-reporter.js";
 
 export interface ResumeCommandIO {
   stdout: RunOutput;
@@ -20,12 +21,14 @@ export interface ResumeCommandIO {
   writeError(message: string): void;
 }
 
-type ResumeDependencies = {
+export type ResumeDependencies = {
+  projectRoot: string;
+  env: NodeJS.ProcessEnv;
+  spawnProcess: SpawnChildProcess;
   browseSessions: typeof browseSessions;
+  createRunReporter: typeof createRunReporter;
   executeSession: typeof executeSession;
 };
-
-const defaultDependencies: ResumeDependencies = { browseSessions, executeSession };
 
 export function buildResumeRuntimeConfig(
   invocation: StoredInvocation,
@@ -50,14 +53,13 @@ export function buildResumeRuntimeConfig(
 
 export async function resumeCommand(
   io: ResumeCommandIO,
-  dependencies: ResumeDependencies = defaultDependencies,
+  dependencies: ResumeDependencies,
 ): Promise<number> {
-  const cwd = process.cwd();
   const choice = await dependencies.browseSessions({
-    sessions: discoverSessions(process.env, cwd),
+    sessions: discoverSessions(dependencies.env, dependencies.projectRoot),
     loadDetail: loadSessionHistory,
     signal: io.signal,
-    deleteLock: (session) => deleteSessionLock(session, cwd),
+    deleteLock: (session) => deleteSessionLock(session, dependencies.projectRoot, dependencies.env),
   });
   if (choice.type === "exit") return choice.exitCode;
 
@@ -74,7 +76,7 @@ export async function resumeCommand(
 
   let current: LoopRuntimeConfig;
   try {
-    current = loadLoopConfig({ cwd: invocation.projectRoot }).config;
+    current = loadLoopConfig({ cwd: invocation.projectRoot, env: dependencies.env }).config;
   } catch (error) {
     if (error instanceof ConfigError) {
       io.writeError(`Error: ${error.message}`);
@@ -83,28 +85,35 @@ export async function resumeCommand(
     throw error;
   }
 
-  await using reporter = createRunReporter(io.stdout);
+  await using reporter = dependencies.createRunReporter(io.stdout);
   try {
-    return await dependencies.executeSession({
-      config: {
-        steps: invocation.steps,
-        agent: invocation.agent.name,
-        passthroughArgs: invocation.agent.passthroughArgs,
+    return await dependencies.executeSession(
+      {
+        config: {
+          steps: invocation.steps,
+          agent: invocation.agent.name,
+          passthroughArgs: invocation.agent.passthroughArgs,
+        },
+        runtimeConfig: buildResumeRuntimeConfig(invocation, current),
+        template: { source: invocation.template.source, template: invocation.template.content },
+        projectRoot: invocation.projectRoot,
+        resumeSession: loaded,
+        reporter,
+        signal: io.signal,
       },
-      runtimeConfig: buildResumeRuntimeConfig(invocation, current),
-      template: { source: invocation.template.source, template: invocation.template.content },
-      projectRoot: invocation.projectRoot,
-      resumeSession: loaded,
-      reporter,
-      signal: io.signal,
-    });
+      { env: dependencies.env, spawnProcess: dependencies.spawnProcess },
+    );
   } catch (error) {
     io.writeError(`Error: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }
 }
 
-function deleteSessionLock(session: SessionOverview, cwd: string): SessionOverview | undefined {
+function deleteSessionLock(
+  session: SessionOverview,
+  projectRoot: string,
+  env: NodeJS.ProcessEnv,
+): SessionOverview | undefined {
   const ownerId = session.lock.lock?.ownerId;
   if (!ownerId) throw new Error("The lock has no valid owner.");
   invalidateSessionLock(session.sessionDir, ownerId, (invalidatedOwner) => {
@@ -113,7 +122,7 @@ function deleteSessionLock(session: SessionOverview, cwd: string): SessionOvervi
       createEvent("lock_invalidated", { ownerId: invalidatedOwner }),
     );
   });
-  return discoverSessions(process.env, cwd).find(
+  return discoverSessions(env, projectRoot).find(
     (candidate) => candidate.sessionDir === session.sessionDir,
   );
 }

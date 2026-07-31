@@ -22,6 +22,16 @@ export interface ChildProcessOptions {
   forceAfterMs?: number;
 }
 
+export interface ChildProcessSpawnInput extends ChildProcessOptions {
+  command: string;
+  args: string[];
+}
+
+export type SpawnChildProcess = (input: ChildProcessSpawnInput) => ChildProcessHandle;
+
+export const spawnChildProcessFromInput: SpawnChildProcess = ({ command, args, ...options }) =>
+  spawnChildProcess(command, args, options);
+
 export function spawnChildProcess(
   command: string,
   args: string[],

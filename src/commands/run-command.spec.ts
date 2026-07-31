@@ -21,6 +21,11 @@ describe("run command", () => {
       { steps: [{ type: "task", task: "work" }] },
       { stdout: { isTTY: true, write() {} }, writeError() {} },
       {
+        projectRoot: process.cwd(),
+        env: {},
+        spawnProcess() {
+          throw new Error("not expected");
+        },
         createRunReporter: () => reporter,
         async executeSession(_options: ExecuteSessionOptions) {
           await Bun.sleep(0);

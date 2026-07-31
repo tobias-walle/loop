@@ -6,8 +6,6 @@ export type { CreateConfiguredAgentOptions } from "./agents/factory.js";
 export { createConfiguredAgent } from "./agents/factory.js";
 export type { PiAdapterOptions } from "./agents/pi.js";
 export { createPiAdapter } from "./agents/pi.js";
-export type { Scenario, ToolCall, Turn } from "./agents/stub.js";
-export { createStubAdapter } from "./agents/stub.js";
 export type {
   AgentAdapter,
   AgentEvent,
@@ -88,3 +86,26 @@ export type {
   StepResult,
   TemplateContext,
 } from "./lib/types.js";
+export type {
+  ClaudeScenarioBuilder,
+  ClaudeUsage,
+} from "./testing/claude-scenario.js";
+export { createClaudeScenario } from "./testing/claude-scenario.js";
+export type {
+  FakeProcessOperation,
+  FakeProcessRun,
+  FakeProcessSpawner,
+  FakeProcessState,
+} from "./testing/fake-process.js";
+export { createFakeProcessSpawner } from "./testing/fake-process.js";
+export type {
+  AgentScenario,
+  HarnessRunOptions,
+  HarnessRunResult,
+  LoopTestHarness,
+  LoopTestRoots,
+  ProviderHarness,
+} from "./testing/loop-test-harness.js";
+export { setupLoopTest } from "./testing/loop-test-harness.js";
+export type { PiScenarioBuilder, PiUsage } from "./testing/pi-scenario.js";
+export { createPiScenario } from "./testing/pi-scenario.js";

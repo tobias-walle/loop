@@ -26,7 +26,15 @@ describe("resumeCommand", () => {
         writeError() {},
       },
       {
+        projectRoot: process.cwd(),
+        env: {},
+        spawnProcess() {
+          throw new Error("not expected");
+        },
         browseSessions: async () => ({ type: "exit", exitCode: 7 }),
+        createRunReporter() {
+          throw new Error("not expected");
+        },
         executeSession: async () => {
           executions++;
           return 0;

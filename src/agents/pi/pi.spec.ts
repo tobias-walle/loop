@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { PassThrough } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
+import type { ChildProcessHandle } from "../utils/child-process";
 import { createPiAdapter } from "./adapter";
 import { completePendingDone, createPiEventState, mapPiEvent } from "./events";
 import { readJsonLines } from "./json";
@@ -22,6 +23,45 @@ describe("pi JSONL", () => {
 });
 
 describe("pi adapter", () => {
+  test("uses an injected process boundary for arguments, raw parsing, and process validation", async () => {
+    const invocations: unknown[] = [];
+    const process: ChildProcessHandle = {
+      pid: 42,
+      stdout: Readable.from([
+        '{"type":"session","id":"sess-1"}\n',
+        '{"type":"agent_start"}\n',
+        '{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"hello"}}\n',
+        '{"type":"agent_end","result":"hello","durationMs":12,"usage":{"input":1,"output":2}}\n',
+        '{"type":"agent_settled"}\n',
+      ]),
+      result: Promise.resolve({ exitCode: 0, signal: null, stderr: "" }),
+      isRunning: () => false,
+      abort() {},
+    };
+    const session = createPiAdapter({
+      command: "pi-test",
+      env: { PROVIDER: "pi" },
+      spawnProcess(input) {
+        invocations.push(input);
+        return process;
+      },
+    }).spawn("hello", { cwd: "/project", env: { RUN: "1" } });
+
+    const events = [];
+    for await (const event of session.events) events.push(event);
+    await session.exited;
+
+    expect(invocations).toEqual([
+      {
+        command: "pi-test",
+        args: ["--no-session", "--print", "--mode", "json", "hello"],
+        cwd: "/project",
+        env: { PROVIDER: "pi", RUN: "1" },
+      },
+    ]);
+    expect(events.at(-1)).toMatchObject({ type: "done", result: "hello" });
+  });
+
   test("spawns one-shot JSON mode with the prompt as an argument", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-pi-adapter-test-"));
     const argvPath = path.join(dir, "argv.json");

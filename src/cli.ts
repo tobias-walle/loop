@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
+import { createProductionApplication } from "./commands/application.js";
 import { handlePreTuiCommand } from "./commands/pre-command.js";
 import { createProcessRunOutput } from "./commands/process-run-output.js";
-import { resumeCommand } from "./commands/resume-command.js";
-import { runCommand } from "./commands/run-command.js";
 import { createShutdownSignals } from "./commands/shutdown-signals.js";
 import { CliError, parseCliArgs } from "./lib/cli-command.js";
 
@@ -27,8 +26,9 @@ async function main(): Promise<number> {
     signal: signals.signal,
     writeError: (message: string): void => console.error(message),
   };
+  const application = createProductionApplication();
   const result =
-    config.command === "resume" ? await resumeCommand(io) : await runCommand(config, io);
+    config.command === "resume" ? await application.resume(io) : await application.run(config, io);
   return signals.exitCode ?? result;
 }
 

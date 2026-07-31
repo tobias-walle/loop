@@ -18,7 +18,9 @@ function getAllTsFiles(dir: string): string[] {
 }
 
 function getProductionFiles(): string[] {
-  return getAllTsFiles(SRC_DIR);
+  return getAllTsFiles(SRC_DIR).filter(
+    (file) => !path.relative(SRC_DIR, file).startsWith(`testing${path.sep}`),
+  );
 }
 
 function relativePath(file: string): string {

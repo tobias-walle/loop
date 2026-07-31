@@ -4,7 +4,8 @@ import type { AgentAdapter, AgentEvent, AgentSession, AgentSpawnOptions } from "
 import {
   type ChildProcessHandle,
   childProcessFailure,
-  spawnChildProcess,
+  type SpawnChildProcess,
+  spawnChildProcessFromInput,
 } from "../utils/child-process.js";
 import { streamEvents } from "./stream.js";
 
@@ -18,6 +19,7 @@ export interface ClaudeAdapterOptions {
   rawArgs?: string[];
   env?: Record<string, string>;
   logger?: Logger;
+  spawnProcess?: SpawnChildProcess;
 }
 
 export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapter {
@@ -26,6 +28,7 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
   const configuredArgs = options?.args ?? {};
   const configuredRawArgs = options?.rawArgs ?? [];
   const configuredEnv = options?.env ?? {};
+  const spawnProcess = options?.spawnProcess ?? spawnChildProcessFromInput;
   if (options?.model) {
     logger.warn(
       "Claude model config is currently ignored until Claude CLI model support is verified",
@@ -46,7 +49,9 @@ export function createClaudeAdapter(options?: ClaudeAdapterOptions): AgentAdapte
         prompt,
       ];
       logger.debug("Spawning Claude process", { command, cwd: opts?.cwd, argCount: args.length });
-      const child = spawnChildProcess(command, args, {
+      const child = spawnProcess({
+        command,
+        args,
         cwd: opts?.cwd,
         env: { ...configuredEnv, ...(opts?.env ?? {}) },
       });

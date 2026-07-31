@@ -4,7 +4,8 @@ import type { AgentAdapter, AgentEvent, AgentSession, AgentSpawnOptions } from "
 import {
   type ChildProcessHandle,
   childProcessFailure,
-  spawnChildProcess,
+  type SpawnChildProcess,
+  spawnChildProcessFromInput,
 } from "../utils/child-process.js";
 import { completePendingSession, createPiEventState, mapPiEvent } from "./events.js";
 import { readJsonLines } from "./json.js";
@@ -18,6 +19,7 @@ export interface PiAdapterOptions {
   rawArgs?: string[];
   env?: Record<string, string>;
   logger?: Logger;
+  spawnProcess?: SpawnChildProcess;
 }
 
 export function createPiAdapter(options: PiAdapterOptions = {}): AgentAdapter {
@@ -27,6 +29,7 @@ export function createPiAdapter(options: PiAdapterOptions = {}): AgentAdapter {
   const configuredRawArgs = options.rawArgs ?? [];
   const configuredEnv = options.env ?? {};
   const logger = options.logger ?? noopLogger;
+  const spawnProcess = options.spawnProcess ?? spawnChildProcessFromInput;
 
   if (
     configuredArgs.mode !== undefined ||
@@ -64,7 +67,9 @@ export function createPiAdapter(options: PiAdapterOptions = {}): AgentAdapter {
         cwd: opts?.cwd,
         argCount: args.length,
       });
-      const child = spawnChildProcess(command, args, {
+      const child = spawnProcess({
+        command,
+        args,
         cwd: opts?.cwd,
         env: { ...configuredEnv, ...(opts?.env ?? {}) },
       });

@@ -1,10 +1,11 @@
+import type { SpawnChildProcess } from "../agents/utils/child-process.js";
 import { ConfigError, type LoopRuntimeConfig, loadLoopConfig } from "../lib/config/index.js";
 import { loadRecipe, RecipeError } from "../lib/recipes/index.js";
 import { loadTemplate } from "../lib/template.js";
 import type { LoopConfig } from "../lib/types.js";
 import type { RunOutput } from "../output/run-reporter.js";
-import { executeSession } from "./execute-session.js";
-import { createRunReporter } from "./run-reporter.js";
+import type { executeSession } from "./execute-session.js";
+import type { createRunReporter } from "./run-reporter.js";
 
 export interface RunCommandIO {
   stdout: RunOutput;
@@ -12,24 +13,28 @@ export interface RunCommandIO {
   writeError(message: string): void;
 }
 
-type RunCommandDependencies = {
+export type RunCommandDependencies = {
+  projectRoot: string;
+  env: NodeJS.ProcessEnv;
+  spawnProcess: SpawnChildProcess;
   createRunReporter: typeof createRunReporter;
   executeSession: typeof executeSession;
 };
 
-const defaultDependencies: RunCommandDependencies = { createRunReporter, executeSession };
-
 export async function runCommand(
   initialConfig: LoopConfig,
   io: RunCommandIO,
-  dependencies: RunCommandDependencies = defaultDependencies,
+  dependencies: RunCommandDependencies,
 ): Promise<number> {
   let config = initialConfig;
   let loadedRecipe: ReturnType<typeof loadRecipe> | undefined;
 
   if (config.recipe) {
     try {
-      loadedRecipe = loadRecipe(config.recipe.name, config.recipe.args);
+      loadedRecipe = loadRecipe(config.recipe.name, config.recipe.args, {
+        cwd: dependencies.projectRoot,
+        env: dependencies.env,
+      });
       config = { ...config, steps: loadedRecipe.steps };
     } catch (error) {
       if (error instanceof RecipeError) {
@@ -47,7 +52,11 @@ export async function runCommand(
 
   let runtimeConfig: LoopRuntimeConfig;
   try {
-    runtimeConfig = loadLoopConfig({ cli: { agent: config.agent } }).config;
+    runtimeConfig = loadLoopConfig({
+      cwd: dependencies.projectRoot,
+      env: dependencies.env,
+      cli: { agent: config.agent },
+    }).config;
   } catch (error) {
     if (error instanceof ConfigError) {
       io.writeError(`Error: ${error.message}`);
@@ -56,15 +65,17 @@ export async function runCommand(
     throw error;
   }
 
-  const projectRoot = process.cwd();
   await using reporter = dependencies.createRunReporter(io.stdout);
-  return await dependencies.executeSession({
-    config,
-    runtimeConfig,
-    template: loadTemplate(projectRoot),
-    loadedRecipe,
-    projectRoot,
-    reporter,
-    signal: io.signal,
-  });
+  return await dependencies.executeSession(
+    {
+      config,
+      runtimeConfig,
+      template: loadTemplate(dependencies.projectRoot),
+      loadedRecipe,
+      projectRoot: dependencies.projectRoot,
+      reporter,
+      signal: io.signal,
+    },
+    { env: dependencies.env, spawnProcess: dependencies.spawnProcess },
+  );
 }

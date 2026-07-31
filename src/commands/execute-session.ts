@@ -1,5 +1,9 @@
 import * as crypto from "node:crypto";
 import { createConfiguredAgent } from "../agents/factory.js";
+import {
+  type SpawnChildProcess,
+  spawnChildProcessFromInput,
+} from "../agents/utils/child-process.js";
 import { bestEffort } from "../lib/best-effort.js";
 import type { LoopRuntimeConfig } from "../lib/config/index.js";
 import { createLogger } from "../lib/logging.js";
@@ -30,28 +34,44 @@ export interface ExecuteSessionOptions {
   signal?: AbortSignal;
 }
 
-export async function executeSession(options: ExecuteSessionOptions): Promise<number> {
+export interface ExecuteSessionDependencies {
+  env: NodeJS.ProcessEnv;
+  spawnProcess: SpawnChildProcess;
+}
+
+const defaultDependencies: ExecuteSessionDependencies = {
+  env: process.env,
+  spawnProcess: spawnChildProcessFromInput,
+};
+
+export async function executeSession(
+  options: ExecuteSessionOptions,
+  dependencies: ExecuteSessionDependencies = defaultDependencies,
+): Promise<number> {
   const { config, runtimeConfig, template, loadedRecipe, projectRoot, reporter, signal } = options;
   const created = options.resumeSession?.aggregate.invocation
     ? undefined
-    : createResumableSession({
-        loopVersion: "0.1.0",
-        projectRoot,
-        steps: config.steps,
-        template: {
-          source: template.source,
-          content: template.template,
-          sha256: crypto.createHash("sha256").update(template.template).digest("hex"),
+    : createResumableSession(
+        {
+          loopVersion: "0.1.0",
+          projectRoot,
+          steps: config.steps,
+          template: {
+            source: template.source,
+            content: template.template,
+            sha256: crypto.createHash("sha256").update(template.template).digest("hex"),
+          },
+          agent: {
+            name: runtimeConfig.agent,
+            command: runtimeConfig.agents[runtimeConfig.agent].command,
+            model: runtimeConfig.agents[runtimeConfig.agent].model,
+            args: runtimeConfig.agents[runtimeConfig.agent].args,
+            passthroughArgs: config.passthroughArgs ?? [],
+          },
+          ...(loadedRecipe ? { recipe: { name: loadedRecipe.name, path: loadedRecipe.path } } : {}),
         },
-        agent: {
-          name: runtimeConfig.agent,
-          command: runtimeConfig.agents[runtimeConfig.agent].command,
-          model: runtimeConfig.agents[runtimeConfig.agent].model,
-          args: runtimeConfig.agents[runtimeConfig.agent].args,
-          passthroughArgs: config.passthroughArgs ?? [],
-        },
-        ...(loadedRecipe ? { recipe: { name: loadedRecipe.name, path: loadedRecipe.path } } : {}),
-      });
+        dependencies.env,
+      );
   const session = options.resumeSession?.aggregate.invocation
     ? {
         sessionDir: options.resumeSession.sessionDir,
@@ -104,6 +124,7 @@ export async function executeSession(options: ExecuteSessionOptions): Promise<nu
       config: runtimeConfig,
       passthroughArgs: config.passthroughArgs ?? [],
       logger,
+      spawnProcess: dependencies.spawnProcess,
     });
     const completedSteps = resumed
       ? [...resumed.aggregate.completedSteps.values()]
